@@ -61,6 +61,7 @@ public class DefinitionProvider {
 		}
 
 		ASTNode definitionNode = GroovyASTUtils.getDefinition(offsetNode, true, ast);
+		// System.out.printf("provideDefinition: definitionNode: %s\n", definitionNode);
 		if (definitionNode == null) {
 			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
 		}

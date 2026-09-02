@@ -63,6 +63,7 @@ public class HoverProvider {
 		}
 
 		ASTNode definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
+		// System.out.printf("provideHover: definitionNode: %s\n", definitionNode);
 		if (definitionNode == null && offsetNode instanceof VariableExpression) {
 			// gdsl: Lookup the variable's text as a field of the enclosing script class.
 			ClassNode enclosingClass = (ClassNode) GroovyASTUtils.getEnclosingNodeOfType(offsetNode, ClassNode.class,

@@ -216,6 +216,18 @@ public class ASTNodeVisitor extends ClassCodeVisitorSupport {
 			}
 			return result;
 		}).sorted((n1, n2) -> {
+			// In the expression `f()`, an implicit `VariableExpression` containing `this`
+			// is created by Groovy at the same location as `f` spanning zero characters,
+			// which unfortunately `Positions.COMPARATOR` prefers over the 1-width `f`.
+			// So here we need to tell the sorting algorithm to prefer the `f` so that
+			// definitions/hovers work on it.
+			if (getParent(n1).equals(getParent(n2)) && getParent(n1) instanceof MethodCallExpression) {
+				if (n1 instanceof VariableExpression && n2 instanceof ConstantExpression) {
+					return 1;
+				} else if (n2 instanceof VariableExpression && n1 instanceof ConstantExpression) {
+					return -1;
+				}
+			}
 			int result = Positions.COMPARATOR.reversed().compare(nodeToRange.get(n1).getStart(),
 					nodeToRange.get(n2).getStart());
 			if (result != 0) {

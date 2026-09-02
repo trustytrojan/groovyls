@@ -174,9 +174,9 @@ public class SemanticTokensProvider {
 		List<Token> tokens = new ArrayList<>();
 		List<ASTNode> nodes = astVisitor.getNodes(uri);
 
-		System.err.println("--- Start of text document: " + uri);
+		// System.err.println("--- Start of text document: " + uri);
 		for (ASTNode node : nodes) {
-			debugPrint(node, text);
+			// debugPrint(node, text);
 
 			if (node instanceof ConstructorCallExpression) {
 				ClassNode type = ((ConstructorCallExpression) node).getType();
