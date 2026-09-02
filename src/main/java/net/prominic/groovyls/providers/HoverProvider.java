@@ -36,37 +36,36 @@ import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 
-import groovy.lang.groovydoc.Groovydoc;
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.compiler.util.GroovydocUtils;
 import net.prominic.groovyls.util.GroovyNodeToStringUtils;
 
 public class HoverProvider {
-	private ASTNodeVisitor ast;
+	private final ASTNodeVisitor ast;
 
-	public HoverProvider(ASTNodeVisitor ast) {
+	public HoverProvider(final ASTNodeVisitor ast) {
 		this.ast = ast;
 	}
 
-	public CompletableFuture<Hover> provideHover(TextDocumentIdentifier textDocument, Position position) {
+	public CompletableFuture<Hover> provideHover(final TextDocumentIdentifier textDocument, final Position position) {
 		if (ast == null) {
 			// this shouldn't happen, but let's avoid an exception if something
 			// goes terribly wrong.
 			return CompletableFuture.completedFuture(null);
 		}
 
-		URI uri = URI.create(textDocument.getUri());
-		ASTNode offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
+		final var uri = URI.create(textDocument.getUri());
+		final var offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
 			return CompletableFuture.completedFuture(null);
 		}
 
-		ASTNode definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
+		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
 		// System.out.printf("provideHover: definitionNode: %s\n", definitionNode);
 		if (definitionNode == null && offsetNode instanceof VariableExpression) {
 			// gdsl: Lookup the variable's text as a field of the enclosing script class.
-			ClassNode enclosingClass = (ClassNode) GroovyASTUtils.getEnclosingNodeOfType(offsetNode, ClassNode.class,
+			final var enclosingClass = (ClassNode) GroovyASTUtils.getEnclosingNodeOfType(offsetNode, ClassNode.class,
 					ast);
 			if (enclosingClass != null && enclosingClass.isScript()) {
 				definitionNode = enclosingClass.getField(offsetNode.getText());
@@ -76,19 +75,18 @@ public class HoverProvider {
 			return CompletableFuture.completedFuture(null);
 		}
 
-		String content = getContent(definitionNode);
+		final var content = getContent(definitionNode);
 		if (content == null) {
+			System.err.println("*** hover not available for node: " + definitionNode);
 			return CompletableFuture.completedFuture(null);
 		}
 
 		String documentation = null;
-		if (definitionNode instanceof AnnotatedNode) {
-			AnnotatedNode annotatedNode = (AnnotatedNode) definitionNode;
-			Groovydoc groovydoc = annotatedNode.getGroovydoc();
-			documentation = GroovydocUtils.groovydocToMarkdownDescription(groovydoc);
+		if (definitionNode instanceof final AnnotatedNode an) {
+			documentation = GroovydocUtils.groovydocToMarkdownDescription(an.getGroovydoc());
 		}
 
-		StringBuilder contentsBuilder = new StringBuilder();
+		final var contentsBuilder = new StringBuilder();
 		contentsBuilder.append("```groovy\n");
 		contentsBuilder.append(content);
 		contentsBuilder.append("\n```");
@@ -97,25 +95,20 @@ public class HoverProvider {
 			contentsBuilder.append(documentation);
 		}
 
-		MarkupContent contents = new MarkupContent();
+		final var contents = new MarkupContent();
 		contents.setKind(MarkupKind.MARKDOWN);
 		contents.setValue(contentsBuilder.toString());
-		Hover hover = new Hover();
+		final var hover = new Hover();
 		hover.setContents(contents);
 		return CompletableFuture.completedFuture(hover);
 	}
 
-	private String getContent(ASTNode hoverNode) {
-		if (hoverNode instanceof final ClassNode cn) {
-			// We want the full class name, just like Eclipse JDT LS.
-			return cn.getName();
-		} else if (hoverNode instanceof final MethodNode mn) {
-			return GroovyNodeToStringUtils.methodToString(mn, ast);
-		} else if (hoverNode instanceof final Variable v) {
-			return GroovyNodeToStringUtils.variableToString(v, ast);
-		} else {
-			System.err.println("*** hover not available for node: " + hoverNode);
-		}
-		return null;
+	private String getContent(final ASTNode hoverNode) {
+		return switch (hoverNode) {
+			case final ClassNode cn -> cn.getName();
+			case final MethodNode mn -> GroovyNodeToStringUtils.methodToString(mn, ast);
+			case final Variable v -> GroovyNodeToStringUtils.variableToString(v, ast);
+			default -> null;
+		};
 	}
 }

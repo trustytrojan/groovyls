@@ -48,6 +48,7 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
+import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
@@ -67,44 +68,42 @@ public class GroovyASTUtils {
         return null;
     }
 
-    public static ASTNode getDefinition(ASTNode node, boolean strict, ASTNodeVisitor astVisitor) {
+    public static ASTNode getDefinition(ASTNode node, final boolean strict, final ASTNodeVisitor astVisitor) {
         if (node == null) {
             return null;
         }
-        ASTNode parentNode = astVisitor.getParent(node);
-        if (node instanceof ExpressionStatement) {
-            ExpressionStatement statement = (ExpressionStatement) node;
-            node = statement.getExpression();
+
+        final var parentNode = astVisitor.getParent(node);
+
+        if (node instanceof final ExpressionStatement es) {
+            node = es.getExpression();
         }
-        // System.out.printf("getDefinition: node=%s parentNode=%s\n", node, parentNode);
-        if (node instanceof ClassNode) {
-            return tryToResolveOriginalClassNode((ClassNode) node, strict, astVisitor);
-        } else if (node instanceof ConstructorCallExpression) {
-            ConstructorCallExpression callExpression = (ConstructorCallExpression) node;
-            MethodNode mn = GroovyASTUtils.getMethodFromCallExpression(callExpression, astVisitor);
-            if (mn == null) {
+
+        if (node instanceof final ClassNode cn) {
+            return tryToResolveOriginalClassNode(cn, strict, astVisitor);
+        } else if (node instanceof final ConstructorCallExpression cce) {
+            final var methodNode = GroovyASTUtils.getMethodFromCallExpression(cce, astVisitor);
+            if (methodNode == null) {
                 // The class has no explicit constructor, so return the ClassNode itself
-                return tryToResolveOriginalClassNode(callExpression.getType(), strict, astVisitor);
+                return tryToResolveOriginalClassNode(cce.getType(), strict, astVisitor);
             }
-            return mn;
+            return methodNode;
         } else if (node instanceof final DeclarationExpression de) {
             if (!de.isMultipleAssignmentDeclaration()) {
-                final var ve = de.getVariableExpression();
-                if (ve.isDynamicTyped()) {
+                final var variableExpression = de.getVariableExpression();
+                if (variableExpression.isDynamicTyped()) {
                     // This makes hovers on def/var show the type of the initializing expression.
                     final var rightExpressionType = de.getRightExpression().getType();
                     return tryToResolveOriginalClassNode(rightExpressionType, strict, astVisitor);
                 } else {
-                    final var originType = ve.getOriginType();
+                    final var originType = variableExpression.getOriginType();
                     return tryToResolveOriginalClassNode(originType, strict, astVisitor);
                 }
             }
-        } else if (node instanceof ClassExpression) {
-            ClassExpression classExpression = (ClassExpression) node;
-            return tryToResolveOriginalClassNode(classExpression.getType(), strict, astVisitor);
-        } else if (node instanceof ImportNode) {
-            ImportNode importNode = (ImportNode) node;
-            return tryToResolveOriginalClassNode(importNode.getType(), strict, astVisitor);
+        } else if (node instanceof final ClassExpression ce) {
+            return tryToResolveOriginalClassNode(ce.getType(), strict, astVisitor);
+        } else if (node instanceof final ImportNode in) {
+            return tryToResolveOriginalClassNode(in.getType(), strict, astVisitor);
         } else if (node instanceof MethodNode) {
             return node;
         } else if (node instanceof ConstantExpression && parentNode != null) {
@@ -113,39 +112,36 @@ public class GroovyASTUtils {
                 if (methodTarget != null)
                     return methodTarget;
                 return GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
-            } else if (parentNode instanceof PropertyExpression) {
-                PropertyExpression propertyExpression = (PropertyExpression) parentNode;
-                PropertyNode propNode = GroovyASTUtils.getPropertyFromExpression(propertyExpression, astVisitor);
-                if (propNode != null) {
-                    return propNode;
+            } else if (parentNode instanceof final PropertyExpression pe) {
+                final var propertyNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
+                if (propertyNode != null) {
+                    return propertyNode;
                 }
-                return GroovyASTUtils.getFieldFromExpression(propertyExpression, astVisitor);
+                return GroovyASTUtils.getFieldFromExpression(pe, astVisitor);
             }
-        } else if (node instanceof VariableExpression) {
-            VariableExpression variableExpression = (VariableExpression) node;
-            Variable accessedVariable = variableExpression.getAccessedVariable();
-            if (accessedVariable instanceof ASTNode) {
-                return (ASTNode) accessedVariable;
+        } else if (node instanceof final VariableExpression ve) {
+            final var accessedVariable = ve.getAccessedVariable();
+            if (accessedVariable instanceof final ASTNode an) {
+                return an;
             }
             // DynamicVariable is not an ASTNode, so skip it
             return null;
         } else if (node instanceof Variable) {
             return node;
         }
+
         return null;
     }
 
-    public static ASTNode getTypeDefinition(ASTNode node, ASTNodeVisitor astVisitor) {
-        ASTNode definitionNode = getDefinition(node, false, astVisitor);
+    public static ASTNode getTypeDefinition(final ASTNode node, final ASTNodeVisitor astVisitor) {
+        final var definitionNode = getDefinition(node, false, astVisitor);
         if (definitionNode == null) {
             return null;
         }
-        if (definitionNode instanceof MethodNode) {
-            MethodNode method = (MethodNode) definitionNode;
-            return tryToResolveOriginalClassNode(method.getReturnType(), true, astVisitor);
-        } else if (definitionNode instanceof Variable) {
-            Variable variable = (Variable) definitionNode;
-            return tryToResolveOriginalClassNode(variable.getOriginType(), true, astVisitor);
+        if (definitionNode instanceof final MethodNode mn) {
+            return tryToResolveOriginalClassNode(mn.getReturnType(), true, astVisitor);
+        } else if (definitionNode instanceof final Variable v) {
+            return tryToResolveOriginalClassNode(v.getOriginType(), true, astVisitor);
         }
         return null;
     }
