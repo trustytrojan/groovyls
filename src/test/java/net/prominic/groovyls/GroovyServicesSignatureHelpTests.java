@@ -119,7 +119,7 @@ class GroovyServicesSignatureHelpTests {
 		List<SignatureInformation> signatures = signatureHelp.getSignatures();
 		Assertions.assertEquals(1, signatures.size());
 		SignatureInformation signature = signatures.get(0);
-		Assertions.assertEquals("public void method(int param0)", signature.getLabel());
+		Assertions.assertEquals("void SignatureHelp.method(int param0)", signature.getLabel());
 		List<ParameterInformation> params = signature.getParameters();
 		Assertions.assertEquals(1, params.size());
 		ParameterInformation param0 = params.get(0);
@@ -147,7 +147,7 @@ class GroovyServicesSignatureHelpTests {
 		List<SignatureInformation> signatures = signatureHelp.getSignatures();
 		Assertions.assertEquals(1, signatures.size());
 		SignatureInformation signature = signatures.get(0);
-		Assertions.assertEquals("public void method(int param0, String param1)", signature.getLabel());
+		Assertions.assertEquals("void SignatureHelp.method(int param0, String param1)", signature.getLabel());
 		List<ParameterInformation> params = signature.getParameters();
 		Assertions.assertEquals(2, params.size());
 		ParameterInformation param0 = params.get(0);
@@ -177,7 +177,7 @@ class GroovyServicesSignatureHelpTests {
 		List<SignatureInformation> signatures = signatureHelp.getSignatures();
 		Assertions.assertEquals(1, signatures.size());
 		SignatureInformation signature = signatures.get(0);
-		Assertions.assertEquals("public void method(int param0, String param1)", signature.getLabel());
+		Assertions.assertEquals("void SignatureHelp.method(int param0, String param1)", signature.getLabel());
 		List<ParameterInformation> params = signature.getParameters();
 		Assertions.assertEquals(2, params.size());
 		ParameterInformation param0 = params.get(0);
