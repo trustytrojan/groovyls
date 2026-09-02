@@ -53,7 +53,6 @@ import org.codehaus.groovy.ast.expr.ClosureExpression;
 import org.codehaus.groovy.ast.expr.ClosureListExpression;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
-import org.codehaus.groovy.ast.expr.DeclarationExpression;
 import org.codehaus.groovy.ast.expr.FieldExpression;
 import org.codehaus.groovy.ast.expr.GStringExpression;
 import org.codehaus.groovy.ast.expr.ListExpression;
@@ -94,11 +93,9 @@ import org.codehaus.groovy.ast.stmt.WhileStatement;
 import org.codehaus.groovy.classgen.BytecodeExpression;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.SourceUnit;
-import org.codehaus.groovy.syntax.Types;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 import net.prominic.lsp.utils.Positions;
 import net.prominic.lsp.utils.Ranges;
@@ -596,7 +593,6 @@ public class ASTNodeVisitor extends ClassCodeVisitorSupport {
 		pushASTNode(node);
 		try {
 			super.visitMethodCallExpression(node);
-			node.setMethodTarget(GroovyASTUtils.getMethodFromCallExpression(node, this));
 		} finally {
 			popASTNode();
 		}
@@ -624,17 +620,6 @@ public class ASTNodeVisitor extends ClassCodeVisitorSupport {
 		pushASTNode(node);
 		try {
 			super.visitBinaryExpression(node);
-
-			final var rightType = node.getRightExpression().getType();
-
-			if (node instanceof final DeclarationExpression de && de.getVariableExpression().isDynamicTyped()) {
-				de.getVariableExpression().setType(rightType);
-			}
-
-			if (node.getOperation().getType() == Types.EQUALS) {
-				// For any assignment expression:
-				node.setType(rightType);
-			}
 		} finally {
 			popASTNode();
 		}
@@ -842,15 +827,6 @@ public class ASTNodeVisitor extends ClassCodeVisitorSupport {
 		pushASTNode(node);
 		try {
 			super.visitPropertyExpression(node);
-			final var propertyNode = GroovyASTUtils.getPropertyFromExpression(node, this);
-			if (propertyNode != null) {
-				node.setType(propertyNode.getType());
-			} else {
-				final var fieldNode = GroovyASTUtils.getFieldFromExpression(node, this);
-				if (fieldNode != null) {
-					node.setType(fieldNode.getType());
-				}
-			}
 		} finally {
 			popASTNode();
 		}

@@ -110,7 +110,6 @@ public class GroovyASTUtils {
         } else if (node instanceof ConstantExpression && parentNode != null) {
             if (parentNode instanceof final MethodCallExpression mce) {
                 final var methodTarget = mce.getMethodTarget();
-                System.out.printf("getDefinition: methodTarget=%s\n", methodTarget);
                 if (methodTarget != null)
                     return methodTarget;
                 return GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);

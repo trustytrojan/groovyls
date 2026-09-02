@@ -1,0 +1,12 @@
+to modify the behavior of StaticTypeCheckingVisitor, create a TypeCheckingExtension or extend StaticTypeCheckingVisitor to do the following when visiting MethodNodes:
+
+1. make a ReturnAdder.ReturnStatementListener that stores all return types of MethodNodes with dynamic return types in its node metadata.
+   make sure to keep the existing behavior for closures though.
+2. in StaticTypeCheckingVisitor.visitMethod(), call ReturnAdder.visitMethod(MethodNode) with a ReturnAdder with the listener we made above
+3. then do exactly the same thing that visitClosureExpression() does, but for MethodNodes instead:
+
+		if (!enclosingClosure.getReturnTypes().isEmpty()) { // populated by ReturnAdder
+			ClassNode returnType = lowestUpperBound(enclosingClosure.getReturnTypes());
+			storeInferredReturnType(expression, wrapTypeIfNecessary(returnType));
+			storeType(expression, wrapClosureType(returnType));
+		}

@@ -59,6 +59,7 @@ import org.codehaus.groovy.control.messages.Message;
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
 import org.codehaus.groovy.runtime.DefaultGroovyMethods;
 import org.codehaus.groovy.syntax.SyntaxException;
+import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
@@ -505,6 +506,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		}
 		astVisitor = new ASTNodeVisitor();
 		astVisitor.visitCompilationUnit(compilationUnit);
+		runStaticTypeChecking();
 
 		// Inject GDSL symbols as methods into ClassNodes so they're available
 		// through normal AST queries in providers
@@ -658,6 +660,21 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		}
 		Set<PublishDiagnosticsParams> diagnostics = handleErrorCollector(compilationUnit.getErrorCollector());
 		diagnostics.stream().forEach(languageClient::publishDiagnostics);
+	}
+
+	private void runStaticTypeChecking() {
+		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
+			if (sourceUnit == null || sourceUnit.getAST() == null) {
+				return;
+			}
+			for (ClassNode classNode : sourceUnit.getAST().getClasses()) {
+				StaticTypeCheckingVisitor visitor = new StaticTypeCheckingVisitor(sourceUnit, classNode);
+				visitor.setCompilationUnit(compilationUnit);
+				visitor.initialize();
+				visitor.visitClass(classNode);
+				visitor.performSecondPass();
+			}
+		});
 	}
 
 	private Set<PublishDiagnosticsParams> handleErrorCollector(ErrorCollector collector) {

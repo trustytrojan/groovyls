@@ -43,6 +43,7 @@ import org.codehaus.groovy.ast.PropertyNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
+import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.codehaus.groovy.ast.ClassNode;
 
 import net.prominic.groovyls.compiler.util.GroovyASTUtils;
@@ -146,6 +147,21 @@ public class SemanticTokensProvider {
 
 		System.err.printf("debugPrint: %s\n  text: '%s'\n", expr, expr.getText());
 
+		final var inferredType = expr.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE);
+		if (inferredType != null) {
+			System.err.printf("  inferred_type: %s\n", inferredType);
+		}
+
+		final var inferredReturnType = expr.getNodeMetaData(StaticTypesMarker.INFERRED_RETURN_TYPE);
+		if (inferredReturnType != null) {
+			System.err.printf("  inferred_return_type: %s\n", inferredType);
+		}
+
+		final var declarationInferredType = expr.getNodeMetaData(StaticTypesMarker.DECLARATION_INFERRED_TYPE);
+		if (declarationInferredType != null) {
+			System.err.printf("  declaration_inferred_type: %s\n", declarationInferredType);
+		}
+
 		if (expr instanceof final Expression e) {
 			System.err.printf("  type: %s\n", e.getType());
 			if (e instanceof final VariableExpression ve) {
@@ -156,6 +172,8 @@ public class SemanticTokensProvider {
 		} else if (expr instanceof final Variable v) {
 			System.err.printf("  type: %s\n  initial_expression: %s\n  is_final: %s\n", v.getType(),
 					v.getInitialExpression(), Modifier.isFinal(v.getModifiers()));
+		} else if (expr instanceof final MethodNode me) {
+			System.err.printf("  return_type: %s\n", me.getReturnType());
 		}
 
 		final var r = GroovyLanguageServerUtils.astNodeToRange(expr);
