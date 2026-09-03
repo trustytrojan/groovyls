@@ -61,8 +61,13 @@ public class HoverProvider {
 			return CompletableFuture.completedFuture(null);
 		}
 
+		// SemanticTokensProvider.debugPrint(offsetNode, null);
+
 		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
-		// System.out.printf("provideHover: definitionNode: %s\n", definitionNode);
+		// System.out.printf("provideHover: offsetNode=%s definitionNode=%s\n", offsetNode, definitionNode);
+		final var offsetNodeReferencesDefinitionNode = definitionNode != offsetNode
+				&& offsetNode instanceof final VariableExpression ve
+				&& ve.getAccessedVariable() == definitionNode;
 		if (definitionNode == null && offsetNode instanceof VariableExpression) {
 			// gdsl: Lookup the variable's text as a field of the enclosing script class.
 			final var enclosingClass = (ClassNode) GroovyASTUtils.getEnclosingNodeOfType(offsetNode, ClassNode.class,
@@ -75,7 +80,9 @@ public class HoverProvider {
 			return CompletableFuture.completedFuture(null);
 		}
 
-		final var content = getContent(definitionNode);
+		// Only offsetNode has the current inferred type for the variable at its
+		// specific point in the code.
+		final var content = getContent(offsetNodeReferencesDefinitionNode ? offsetNode : definitionNode);
 		if (content == null) {
 			System.err.println("*** hover not available for node: " + definitionNode);
 			return CompletableFuture.completedFuture(null);

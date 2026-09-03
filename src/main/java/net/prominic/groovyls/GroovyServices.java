@@ -127,6 +127,7 @@ import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ClassGraphException;
 import io.github.classgraph.ScanResult;
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
+import net.prominic.groovyls.compiler.ast.MySTCVisitor;
 import net.prominic.groovyls.compiler.control.GroovyLSCompilationUnit;
 import net.prominic.groovyls.config.ICompilationUnitFactory;
 import net.prominic.groovyls.gdsl.GdslSymbolsManager;
@@ -506,12 +507,13 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		}
 		astVisitor = new ASTNodeVisitor();
 		astVisitor.visitCompilationUnit(compilationUnit);
-		runStaticTypeChecking();
 
 		// Inject GDSL symbols as methods into ClassNodes so they're available
 		// through normal AST queries in providers
 		gdslSymbolsManager.injectGdslSymbolsIntoClassNodes(astVisitor.getClassNodes(),
 				compilationUnit.getClassLoader());
+
+		runStaticTypeChecking();
 	}
 
 	// This is run on EVERY CHANGE to EVERY GROOVY FILE in the workspace.
@@ -529,6 +531,8 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		// through normal AST queries in providers
 		gdslSymbolsManager.injectGdslSymbolsIntoClassNodes(astVisitor.getClassNodes(),
 				compilationUnit.getClassLoader());
+
+		runStaticTypeChecking();
 	}
 
 	private void installDependencies(JsonObject dependencies) {
@@ -667,8 +671,13 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 			if (sourceUnit == null || sourceUnit.getAST() == null) {
 				return;
 			}
-			for (ClassNode classNode : sourceUnit.getAST().getClasses()) {
-				StaticTypeCheckingVisitor visitor = new StaticTypeCheckingVisitor(sourceUnit, classNode);
+			for (final var classNode : sourceUnit.getAST().getClasses()) {
+				// We want STC to run on every change to the document.
+				classNode.removeNodeMetaData(StaticTypeCheckingVisitor.class);
+				classNode.getMethods().forEach(n -> n.removeNodeMetaData(StaticTypeCheckingVisitor.class));
+				classNode.getDeclaredConstructors().forEach(n -> n.removeNodeMetaData(StaticTypeCheckingVisitor.class));
+
+				final var visitor = new MySTCVisitor(sourceUnit, classNode, astVisitor);
 				visitor.setCompilationUnit(compilationUnit);
 				visitor.initialize();
 				visitor.visitClass(classNode);

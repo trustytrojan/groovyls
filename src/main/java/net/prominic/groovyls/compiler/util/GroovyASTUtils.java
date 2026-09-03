@@ -91,10 +91,19 @@ public class GroovyASTUtils {
         } else if (node instanceof final DeclarationExpression de) {
             if (!de.isMultipleAssignmentDeclaration()) {
                 final var variableExpression = de.getVariableExpression();
+
                 if (variableExpression.isDynamicTyped()) {
-                    // This makes hovers on def/var show the type of the initializing expression.
-                    final var rightExpressionType = de.getRightExpression().getType();
-                    return tryToResolveOriginalClassNode(rightExpressionType, strict, astVisitor);
+                    // We run the STC over the AST now, so prefer the inferred type if available.
+                    var inferredType = variableExpression.<ClassNode>getNodeMetaData("groovyls-original-inferred-type");
+                    if (inferredType != null)
+                        return inferredType;
+
+                    inferredType = variableExpression.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE);
+                    if (inferredType != null)
+                        return inferredType;
+
+                    // Otherwise fallback to the type of the initializing expression.
+                    return tryToResolveOriginalClassNode(de.getRightExpression().getType(), strict, astVisitor);
                 } else {
                     final var originType = variableExpression.getOriginType();
                     return tryToResolveOriginalClassNode(originType, strict, astVisitor);
@@ -122,6 +131,8 @@ public class GroovyASTUtils {
         } else if (node instanceof final VariableExpression ve) {
             final var accessedVariable = ve.getAccessedVariable();
             if (accessedVariable instanceof final ASTNode an) {
+                // System.out.printf("getDefinition: ve=%s accessedVariable=%s\n", ve,
+                // accessedVariable);
                 return an;
             }
             // DynamicVariable is not an ASTNode, so skip it
@@ -312,14 +323,26 @@ public class GroovyASTUtils {
                 return getTypeOfNode(fieldNode, astVisitor);
             }
             return expression.getType();
-        } else if (node instanceof Variable) {
-            Variable var = (Variable) node;
+        } else if (node instanceof final Variable var) {
             if (var.getName().equals("this")) {
                 ClassNode enclosingClass = (ClassNode) getEnclosingNodeOfType(node, ClassNode.class, astVisitor);
                 if (enclosingClass != null) {
                     return enclosingClass;
                 }
             } else if (var.isDynamicTyped()) {
+                if (var instanceof final VariableExpression ve) {
+                    // We run the STC over the AST now, so prefer the inferred type if available.
+                    var inferredType = ve.<ClassNode>getNodeMetaData("groovyls-original-inferred-type");
+                    if (inferredType != null)
+                        return inferredType;
+
+                    inferredType = ve.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE);
+                    if (inferredType != null)
+                        return inferredType;
+                }
+
+                // System.out.printf("getTypeOfNode: didn't get inferred type for %s, continuing to base impl\n", var);
+
                 ASTNode defNode = GroovyASTUtils.getDefinition(node, false, astVisitor);
                 if (defNode instanceof Variable) {
                     Variable defVar = (Variable) defNode;

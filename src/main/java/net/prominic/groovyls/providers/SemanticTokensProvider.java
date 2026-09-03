@@ -140,44 +140,55 @@ public class SemanticTokensProvider {
 		return new Token(startLine, startChar, endChar - startChar, type, modifiers);
 	}
 
-	private static void debugPrint(ASTNode expr, String text) {
+	public static void debugPrint(final ASTNode expr, final String text) {
 		if (expr instanceof final Expression e && e.isSynthetic()) {
 			return;
 		}
 
 		System.err.printf("debugPrint: %s\n  text: '%s'\n", expr, expr.getText());
 
-		final var inferredType = expr.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE);
-		if (inferredType != null) {
-			System.err.printf("  inferred_type: %s\n", inferredType);
+		if (expr.getNodeMetaData("groovyls-original-inferred-type") instanceof final ClassNode cn) {
+			System.err.printf("  original_inferred_type: %s\n", cn);
 		}
 
-		final var inferredReturnType = expr.getNodeMetaData(StaticTypesMarker.INFERRED_RETURN_TYPE);
-		if (inferredReturnType != null) {
-			System.err.printf("  inferred_return_type: %s\n", inferredType);
+		if (expr.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn) {
+			System.err.printf("  inferred_type: %s\n", cn);
 		}
 
-		final var declarationInferredType = expr.getNodeMetaData(StaticTypesMarker.DECLARATION_INFERRED_TYPE);
-		if (declarationInferredType != null) {
-			System.err.printf("  declaration_inferred_type: %s\n", declarationInferredType);
+		if (expr.getNodeMetaData(StaticTypesMarker.INFERRED_RETURN_TYPE) instanceof final ClassNode cn) {
+			System.err.printf("  inferred_return_type: %s\n", cn);
+		}
+
+		if (expr.getNodeMetaData(StaticTypesMarker.DECLARATION_INFERRED_TYPE) instanceof final ClassNode cn) {
+			System.err.printf("  declaration_inferred_type: %s\n", cn);
 		}
 
 		if (expr instanceof final Expression e) {
 			System.err.printf("  type: %s\n", e.getType());
+		} else if (expr instanceof final Variable v) {
+			System.err.printf("  type: %s\n", v.getType());
+		}
+
+		if (expr instanceof final Expression e) {
 			if (e instanceof final VariableExpression ve) {
 				System.err.printf("  accessed_variable: %s\n", ve.getAccessedVariable());
 			} else if (e instanceof final MethodCallExpression mce) {
 				System.err.printf("  method_target: %s\n", mce.getMethodTarget());
 			}
-		} else if (expr instanceof final Variable v) {
-			System.err.printf("  type: %s\n  initial_expression: %s\n  is_final: %s\n", v.getType(),
-					v.getInitialExpression(), Modifier.isFinal(v.getModifiers()));
-		} else if (expr instanceof final MethodNode me) {
+		}
+
+		if (expr instanceof final Variable v) {
+			System.err.printf("  initial_expression: %s\n  is_final: %s\n  is_dynamic_typed: %s\n",
+					v.getInitialExpression(),
+					Modifier.isFinal(v.getModifiers()),
+					v.isDynamicTyped());
+		}
+
+		if (expr instanceof final MethodNode me) {
 			System.err.printf("  return_type: %s\n", me.getReturnType());
 		}
 
-		final var r = GroovyLanguageServerUtils.astNodeToRange(expr);
-		if (r != null) {
+		if (text != null && GroovyLanguageServerUtils.astNodeToRange(expr) instanceof final Range r) {
 			System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(text, r));
 		}
 	}
