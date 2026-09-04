@@ -165,7 +165,6 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	public GroovyServices(ICompilationUnitFactory factory) {
 		compilationUnitFactory = factory;
-		injectDefaultGroovyMethods();
 	}
 
 	public void setWorkspaceRoot(Path workspaceRoot) {
@@ -554,31 +553,6 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 			}
 		}
 		System.err.println("Finished installing all Maven dependencies");
-	}
-
-	private MethodNode addMethodToClassNodeOfClass(Class<?> c, Method method) {
-		return ClassHelper.make(c).addMethod(method.getName(),
-				Opcodes.ACC_PUBLIC,
-				ClassHelper.make(method.getReturnType()),
-				Stream.of(method.getParameters()).skip(1)
-						.map(p -> new Parameter(ClassHelper.make(p.getType()), p.getName()))
-						.toArray(Parameter[]::new),
-				Stream.of(method.getExceptionTypes()).map(ClassHelper::make).toArray(ClassNode[]::new),
-				null);
-	}
-
-	private void injectDefaultGroovyMethod(Method method) {
-		Class<?> firstParameterType = method.getParameterTypes()[0];
-		MethodNode mn = addMethodToClassNodeOfClass(firstParameterType, method);
-		mn.putNodeMetaData("dgm", true);
-	}
-
-	private void injectDefaultGroovyMethods() {
-		Stream.of(DefaultGroovyMethods.DGM_LIKE_CLASSES)
-				.map(Class::getMethods)
-				.flatMap(Stream::of)
-				.filter(m -> m.getParameterCount() > 0)
-				.forEach(this::injectDefaultGroovyMethod);
 	}
 
 	private boolean createOrUpdateCompilationUnit() {

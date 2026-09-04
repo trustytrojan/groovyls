@@ -29,7 +29,9 @@ import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Variable;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
+import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
@@ -61,10 +63,16 @@ public class HoverProvider {
 			return CompletableFuture.completedFuture(null);
 		}
 
+		final ClassNode inferredType = (offsetNode instanceof final ConstantExpression ce
+				&& GroovyASTUtils.getPropertyOrMethodCallFromConstantExpression(ce, ast) instanceof final ASTNode an)
+						? an.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE)
+						: null;
+
 		// SemanticTokensProvider.debugPrint(offsetNode, null);
 
 		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
-		// System.out.printf("provideHover: offsetNode=%s definitionNode=%s\n", offsetNode, definitionNode);
+		// System.out.printf("provideHover: offsetNode=%s definitionNode=%s\n",
+		// offsetNode, definitionNode);
 		final var offsetNodeReferencesDefinitionNode = definitionNode != offsetNode
 				&& offsetNode instanceof final VariableExpression ve
 				&& ve.getAccessedVariable() == definitionNode;
@@ -82,7 +90,9 @@ public class HoverProvider {
 
 		// Only offsetNode has the current inferred type for the variable at its
 		// specific point in the code.
-		final var content = getContent(offsetNodeReferencesDefinitionNode ? offsetNode : definitionNode);
+		final var content = getContent(
+				offsetNodeReferencesDefinitionNode ? offsetNode : definitionNode,
+				inferredType);
 		if (content == null) {
 			System.err.println("*** hover not available for node: " + definitionNode);
 			return CompletableFuture.completedFuture(null);
@@ -110,10 +120,10 @@ public class HoverProvider {
 		return CompletableFuture.completedFuture(hover);
 	}
 
-	private String getContent(final ASTNode hoverNode) {
+	private String getContent(final ASTNode hoverNode, final ClassNode inferredType) {
 		return switch (hoverNode) {
-			case final ClassNode cn -> cn.getName();
-			case final MethodNode mn -> GroovyNodeToStringUtils.methodToString(mn, ast);
+			case final ClassNode cn -> GroovyNodeToStringUtils.prettyPrintTypeWithPackage(cn);
+			case final MethodNode mn -> GroovyNodeToStringUtils.methodToString(mn, ast, inferredType);
 			case final Variable v -> GroovyNodeToStringUtils.variableToString(v, ast);
 			default -> null;
 		};

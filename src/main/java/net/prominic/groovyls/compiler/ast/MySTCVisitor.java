@@ -51,7 +51,7 @@ public class MySTCVisitor extends StaticTypeCheckingVisitor {
 			return;
 		}
 
-		if (poppingAssignmentTracking) {
+		if (poppingAssignmentTracking && ve.getNodeMetaData("groovyls-during-popAssignmentTracking") == null) {
 			// System.out.println(
 			// 		"MySTCVisitor.storeType: poppingAssignmentTracking is true, storing this in the metadata of " + ve);
 			ve.setNodeMetaData("groovyls-during-popAssignmentTracking", true);
@@ -63,7 +63,8 @@ public class MySTCVisitor extends StaticTypeCheckingVisitor {
 			// This VariableExpression is the **original** object created by a
 			// DeclarationExpression, and it ALREADY has an inferred type.
 			super.storeType(exp, cn);
-			ve.setNodeMetaData("groovyls-original-inferred-type", existingInferredType);
+			if (ve.getNodeMetaData("groovyls-original-inferred-type") == null)
+				ve.setNodeMetaData("groovyls-original-inferred-type", existingInferredType);
 			return;
 		}
 

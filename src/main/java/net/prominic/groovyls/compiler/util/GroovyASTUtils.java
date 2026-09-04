@@ -117,15 +117,25 @@ public class GroovyASTUtils {
             return node;
         } else if (node instanceof ConstantExpression && parentNode != null) {
             if (parentNode instanceof final MethodCallExpression mce) {
-                final var methodTarget = mce.getMethodTarget();
-                if (methodTarget != null)
-                    return methodTarget;
+                // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata when it finds a
+                // matching method.
+                if (mce.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
+                    return mn;
+
+                if (mce.getMethodTarget() instanceof final MethodNode mn)
+                    return mn;
+
                 return GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
             } else if (parentNode instanceof final PropertyExpression pe) {
-                final var propertyNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
-                if (propertyNode != null) {
-                    return propertyNode;
-                }
+                // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata for
+                // PropertyExpressions where a matching getter is available.
+                // For example: `new Object().class` calls `Object.getClass()`.
+                if (pe.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
+                    return mn;
+
+                if (GroovyASTUtils.getPropertyFromExpression(pe, astVisitor) instanceof final PropertyNode pn)
+                    return pn;
+
                 return GroovyASTUtils.getFieldFromExpression(pe, astVisitor);
             }
         } else if (node instanceof final VariableExpression ve) {
@@ -141,6 +151,15 @@ public class GroovyASTUtils {
             return node;
         }
 
+        return null;
+    }
+
+    public static ASTNode getPropertyOrMethodCallFromConstantExpression(
+            final ConstantExpression ce,
+            final ASTNodeVisitor astVisitor) {
+        final var parentNode = astVisitor.getParent(ce);
+        if (parentNode instanceof PropertyExpression || parentNode instanceof MethodCallExpression)
+            return parentNode;
         return null;
     }
 
@@ -305,24 +324,29 @@ public class GroovyASTUtils {
         } else if (node instanceof ConstructorCallExpression) {
             ConstructorCallExpression expression = (ConstructorCallExpression) node;
             return expression.getType();
-        } else if (node instanceof MethodCallExpression) {
-            MethodCallExpression expression = (MethodCallExpression) node;
-            MethodNode methodNode = GroovyASTUtils.getMethodFromCallExpression(expression, astVisitor);
-            if (methodNode != null) {
-                return methodNode.getReturnType();
-            }
-            return expression.getType();
-        } else if (node instanceof PropertyExpression) {
-            PropertyExpression expression = (PropertyExpression) node;
-            PropertyNode propNode = GroovyASTUtils.getPropertyFromExpression(expression, astVisitor);
-            if (propNode != null) {
-                return getTypeOfNode(propNode, astVisitor);
-            }
-            FieldNode fieldNode = GroovyASTUtils.getFieldFromExpression(expression, astVisitor);
-            if (fieldNode != null) {
-                return getTypeOfNode(fieldNode, astVisitor);
-            }
-            return expression.getType();
+        } else if (node instanceof final MethodCallExpression mce) {
+            // Groovy's STC fills in INFERRED_TYPE with the return type of the method it
+            // stored in DIRECT_METHOD_CALL_TARGET.
+            if (mce.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn)
+                return cn;
+
+            if (GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor) instanceof final MethodNode mn)
+                return mn.getReturnType();
+
+            return mce.getType();
+        } else if (node instanceof final PropertyExpression pe) {
+            // Groovy's STC fills in INFERRED_TYPE with the return type of the method it
+            // stored in DIRECT_METHOD_CALL_TARGET.
+            if (pe.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn)
+                return cn;
+
+            if (GroovyASTUtils.getPropertyFromExpression(pe, astVisitor) instanceof final PropertyNode pn)
+                return getTypeOfNode(pn, astVisitor);
+
+            if (GroovyASTUtils.getFieldFromExpression(pe, astVisitor) instanceof final FieldNode fn)
+                return getTypeOfNode(fn, astVisitor);
+
+            return pe.getType();
         } else if (node instanceof final Variable var) {
             if (var.getName().equals("this")) {
                 ClassNode enclosingClass = (ClassNode) getEnclosingNodeOfType(node, ClassNode.class, astVisitor);
@@ -332,16 +356,12 @@ public class GroovyASTUtils {
             } else if (var.isDynamicTyped()) {
                 if (var instanceof final VariableExpression ve) {
                     // We run the STC over the AST now, so prefer the inferred type if available.
-                    var inferredType = ve.<ClassNode>getNodeMetaData("groovyls-original-inferred-type");
-                    if (inferredType != null)
-                        return inferredType;
+                    if (ve.getNodeMetaData("groovyls-original-inferred-type") instanceof final ClassNode cn)
+                        return cn;
 
-                    inferredType = ve.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE);
-                    if (inferredType != null)
-                        return inferredType;
+                    if (ve.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn)
+                        return cn;
                 }
-
-                // System.out.printf("getTypeOfNode: didn't get inferred type for %s, continuing to base impl\n", var);
 
                 ASTNode defNode = GroovyASTUtils.getDefinition(node, false, astVisitor);
                 if (defNode instanceof Variable) {

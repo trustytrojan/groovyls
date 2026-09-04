@@ -222,4 +222,21 @@ public class StaticTypeCheckingTests {
 		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 1), "BigDecimal x");
 		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 3, 0), "Number x");
 	}
+
+	@Test
+	void testCallableObject() throws Exception {
+		final var filePath = srcRoot.resolve("TypeInference.groovy");
+		final var uri = filePath.toUri().toString();
+		final var contents = """
+				def call() {}
+				def obj = new TypeInference()
+				obj()
+				""";
+		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
+		final var textDocument = new TextDocumentIdentifier(uri);
+
+		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "TypeInference obj");
+		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 0), "Object TypeInference.call()");
+	}
 }

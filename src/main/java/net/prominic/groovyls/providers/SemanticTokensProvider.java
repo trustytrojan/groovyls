@@ -51,6 +51,7 @@ import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.DeclarationExpression;
 import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.expr.GStringExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 import net.prominic.lsp.utils.Ranges;
@@ -163,18 +164,22 @@ public class SemanticTokensProvider {
 			System.err.printf("  declaration_inferred_type: %s\n", cn);
 		}
 
+		if (expr.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn) {
+			System.err.printf("  direct_method_call_target: %s\n", mn);
+		}
+
 		if (expr instanceof final Expression e) {
 			System.err.printf("  type: %s\n", e.getType());
 		} else if (expr instanceof final Variable v) {
 			System.err.printf("  type: %s\n", v.getType());
 		}
 
-		if (expr instanceof final Expression e) {
-			if (e instanceof final VariableExpression ve) {
-				System.err.printf("  accessed_variable: %s\n", ve.getAccessedVariable());
-			} else if (e instanceof final MethodCallExpression mce) {
-				System.err.printf("  method_target: %s\n", mce.getMethodTarget());
-			}
+		if (expr instanceof final VariableExpression ve) {
+			System.err.printf("  accessed_variable: %s\n", ve.getAccessedVariable());
+		}
+
+		if (expr instanceof final MethodCallExpression mce) {
+			System.err.printf("  method_target: %s\n", mce.getMethodTarget());
 		}
 
 		if (expr instanceof final Variable v) {
@@ -193,9 +198,11 @@ public class SemanticTokensProvider {
 		}
 	}
 
+	private String currentDocumentText;
+
 	public SemanticTokens provideFull(TextDocumentIdentifier textDocument) {
 		URI uri = URI.create(textDocument.getUri());
-		String text = fileContentsTracker.getContents(uri);
+		String text = currentDocumentText = fileContentsTracker.getContents(uri);
 		if (text == null || astVisitor == null || uri == null) {
 			return new SemanticTokens(new ArrayList<>());
 		}
@@ -215,9 +222,8 @@ public class SemanticTokensProvider {
 				if (r == null)
 					continue;
 				tokens.add(makeTokenFromRange(r, SemanticTokenTypes.METHOD.ordinal(), 0));
-			} else if (node instanceof DeclarationExpression) {
-				DeclarationExpression de = (DeclarationExpression) node;
-				VariableExpression ve = de.getVariableExpression();
+			} else if (node instanceof final DeclarationExpression de
+					&& de.getVariableExpression() instanceof final VariableExpression ve) {
 				ClassNode type = ve.getOriginType();
 				final Range r = GroovyLanguageServerUtils.astNodeToRange(type);
 				if (r == null)
@@ -248,8 +254,9 @@ public class SemanticTokensProvider {
 		if (methodText == null || methodText.isEmpty())
 			return;
 
-		// This is the original MethodNode from the class it was declared in, if found.
-		var actualMethod = call.getMethodTarget();
+		var actualMethod = call.<MethodNode>getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET);
+		if (actualMethod == null)
+			actualMethod = call.getMethodTarget();
 		if (actualMethod == null)
 			actualMethod = GroovyASTUtils.getMethodFromCallExpression(call, astVisitor);
 		if (actualMethod == null)
@@ -312,7 +319,17 @@ public class SemanticTokensProvider {
 			return;
 
 		final var lineno = propRange.getStart().getLine();
-		final var charno = propRange.getStart().getCharacter();
+		var charno = propRange.getStart().getCharacter();
+
+		if (astVisitor.getParent(pe) instanceof final GStringExpression gse
+				&& GroovyLanguageServerUtils.astNodeToRange(gse) instanceof final Range r) {
+			final var sourceText = Ranges.getSubstring(currentDocumentText, r);
+			if (sourceText.contains('$' + pe.getText()))
+				// This PropertyExpression is inside a GStringExpression like this:
+				// "value: $obj.value". The PropertyExpression's range starts at the '$' but
+				// does not count it as length...
+				++charno;
+		}
 
 		// Use these utility functions because they also take into account member
 		// visibility.
@@ -320,25 +337,25 @@ public class SemanticTokensProvider {
 		final var propertyNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
 
 		if (fieldNode == null && propertyNode == null) {
-			final var getterName = convertToGetterName(propName);
-			final var setterName = convertToSetterName(propName);
-			final var objType = pe.getObjectExpression().getType();
+			final var methodNode = pe.<MethodNode>getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET);
 
-			MethodNode getter = null, setter = null;
-			for (final var method : objType.getAllDeclaredMethods()) {
-				if (method.getName().equals(getterName))
-					getter = method;
-				else if (method.getName().equals(setterName))
-					setter = method;
-				if (getter != null && setter != null)
-					break;
-			}
-
-			if (getter == null && setter == null)
+			if (methodNode == null)
+				// The STC **should** always fill in the method for PropertyExpressions
+				// that match getters/setters.
 				return;
 
-			// No setter: treat the property like a constant.
-			final var modifiers = (setter == null) ? SemanticTokenModifiers.bitset(SemanticTokenModifiers.READONLY) : 0;
+			var modifiers = 0;
+
+			final var methodName = methodNode.getName();
+			if (methodName.startsWith("get")) {
+				// We need to see if there is a setter with the same name that takes 1 argument.
+				final var setter = methodNode.getDeclaringClass().getDeclaredMethod(
+						methodName.replaceFirst("get", "set"),
+						new Parameter[] { new Parameter(methodNode.getReturnType(), null) });
+				if (setter == null)
+					// If not, then the property can be considered "readonly".
+					modifiers = SemanticTokenModifiers.bitset(SemanticTokenModifiers.READONLY);
+			}
 
 			tokens.add(new Token(lineno, charno, propName.length(), SemanticTokenTypes.PROPERTY.ordinal(), modifiers));
 			return;
@@ -351,20 +368,6 @@ public class SemanticTokensProvider {
 			modifiers = getModifiersOfProperty(propertyNode);
 
 		tokens.add(new Token(lineno, charno, propName.length(), SemanticTokenTypes.PROPERTY.ordinal(), modifiers));
-	}
-
-	private static String convertToGetterName(String propName) {
-		if (propName == null || propName.isBlank())
-			throw new IllegalArgumentException();
-		final var firstChar = propName.charAt(0);
-		return "get" + Character.toUpperCase(firstChar) + propName.substring(1);
-	}
-
-	private static String convertToSetterName(String propName) {
-		if (propName == null || propName.isBlank())
-			throw new IllegalArgumentException();
-		final var firstChar = propName.charAt(0);
-		return "set" + Character.toUpperCase(firstChar) + propName.substring(1);
 	}
 
 	// probably should be named `processSymbol` and/or should be split up by type a

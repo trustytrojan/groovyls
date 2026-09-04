@@ -36,6 +36,7 @@ import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.SemanticTokensLegend;
 import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.SetTraceParams;
 import org.eclipse.lsp4j.SignatureHelpOptions;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
@@ -50,6 +51,10 @@ import net.prominic.groovyls.config.ICompilationUnitFactory;
 import net.prominic.groovyls.providers.SemanticTokensProvider;
 
 public class GroovyLanguageServer implements LanguageServer, LanguageClientAware {
+    @Override
+    public void setTrace(SetTraceParams params) {
+        System.out.println("setTrace: " + params);
+    }
 
     public static void main(String[] args) {
         InputStream systemIn = System.in;
