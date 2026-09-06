@@ -12,18 +12,14 @@ import org.codehaus.groovy.ast.Variable;
 import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
-import org.codehaus.groovy.ast.tools.WideningCategories;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.codehaus.groovy.transform.stc.TypeCheckingContext;
 
 public class MySTCVisitor extends StaticTypeCheckingVisitor {
-	private final ASTNodeVisitor ast;
-
-	public MySTCVisitor(SourceUnit source, ClassNode classNode, ASTNodeVisitor ast) {
+	public MySTCVisitor(SourceUnit source, ClassNode classNode) {
 		super(source, classNode);
-		this.ast = ast;
 	}
 
 	private boolean poppingAssignmentTracking;

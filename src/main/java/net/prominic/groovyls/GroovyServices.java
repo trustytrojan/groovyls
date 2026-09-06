@@ -23,7 +23,6 @@ package net.prominic.groovyls;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,26 +39,38 @@ import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
 import org.codehaus.groovy.GroovyBugError;
 import org.codehaus.groovy.ast.ASTNode;
-import org.codehaus.groovy.ast.ClassHelper;
-import org.codehaus.groovy.ast.ClassNode;
-import org.codehaus.groovy.ast.MethodNode;
-import org.codehaus.groovy.ast.Parameter;
+import org.codehaus.groovy.classgen.VariableScopeVisitor;
 import org.codehaus.groovy.control.CompilationFailedException;
 import org.codehaus.groovy.control.ErrorCollector;
 import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.messages.Message;
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
-import org.codehaus.groovy.runtime.DefaultGroovyMethods;
 import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
+import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.artifact.Artifact;
+import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.collection.CollectRequest;
+import org.eclipse.aether.collection.DependencySelector;
+import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory;
+import org.eclipse.aether.graph.Dependency;
+import org.eclipse.aether.graph.Exclusion;
+import org.eclipse.aether.impl.DefaultServiceLocator;
+import org.eclipse.aether.repository.LocalRepository;
+import org.eclipse.aether.repository.RemoteRepository;
+import org.eclipse.aether.resolution.DependencyRequest;
+import org.eclipse.aether.resolution.DependencyResult;
+import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
+import org.eclipse.aether.spi.connector.transport.TransporterFactory;
+import org.eclipse.aether.transport.http.HttpTransporterFactory;
+import org.eclipse.aether.util.graph.selector.AndDependencySelector;
+import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
@@ -100,29 +111,11 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
-import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
-import org.eclipse.aether.DefaultRepositorySystemSession;
-import org.eclipse.aether.RepositorySystem;
-import org.eclipse.aether.artifact.Artifact;
-import org.eclipse.aether.artifact.DefaultArtifact;
-import org.eclipse.aether.collection.CollectRequest;
-import org.eclipse.aether.collection.DependencySelector;
-import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory;
-import org.eclipse.aether.graph.Dependency;
-import org.eclipse.aether.graph.Exclusion;
-import org.eclipse.aether.impl.DefaultServiceLocator;
-import org.eclipse.aether.repository.LocalRepository;
-import org.eclipse.aether.repository.RemoteRepository;
-import org.eclipse.aether.resolution.DependencyRequest;
-import org.eclipse.aether.resolution.DependencyResult;
-import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
-import org.eclipse.aether.spi.connector.transport.TransporterFactory;
-import org.eclipse.aether.transport.http.HttpTransporterFactory;
-import org.eclipse.aether.util.graph.selector.AndDependencySelector;
-import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 import groovy.lang.GroovyClassLoader;
-import groovyjarjarasm.asm.Opcodes;
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ClassGraphException;
 import io.github.classgraph.ScanResult;
@@ -137,10 +130,10 @@ import net.prominic.groovyls.providers.DocumentSymbolProvider;
 import net.prominic.groovyls.providers.HoverProvider;
 import net.prominic.groovyls.providers.ReferenceProvider;
 import net.prominic.groovyls.providers.RenameProvider;
+import net.prominic.groovyls.providers.SemanticTokensProvider;
 import net.prominic.groovyls.providers.SignatureHelpProvider;
 import net.prominic.groovyls.providers.TypeDefinitionProvider;
 import net.prominic.groovyls.providers.WorkspaceSymbolProvider;
-import net.prominic.groovyls.providers.SemanticTokensProvider;
 import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 import net.prominic.lsp.utils.Positions;
@@ -512,6 +505,15 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		gdslSymbolsManager.injectGdslSymbolsIntoClassNodes(astVisitor.getClassNodes(),
 				compilationUnit.getClassLoader());
 
+		// Rerun variable scope visitor because GDSL "property" symbols are injected as
+		// top-level variables now
+		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
+			final var moduleNode = sourceUnit.getAST();
+			if (moduleNode == null)
+				return;
+			moduleNode.getClasses().forEach(c -> new VariableScopeVisitor(sourceUnit).visitClass(c));
+		});
+
 		runStaticTypeChecking();
 	}
 
@@ -530,6 +532,15 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		// through normal AST queries in providers
 		gdslSymbolsManager.injectGdslSymbolsIntoClassNodes(astVisitor.getClassNodes(),
 				compilationUnit.getClassLoader());
+
+		// Rerun variable scope visitor because GDSL "property" symbols are injected as
+		// top-level variables now
+		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
+			final var moduleNode = sourceUnit.getAST();
+			if (moduleNode == null)
+				return;
+			moduleNode.getClasses().forEach(c -> new VariableScopeVisitor(sourceUnit).visitClass(c));
+		});
 
 		runStaticTypeChecking();
 	}
@@ -651,7 +662,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 				classNode.getMethods().forEach(n -> n.removeNodeMetaData(StaticTypeCheckingVisitor.class));
 				classNode.getDeclaredConstructors().forEach(n -> n.removeNodeMetaData(StaticTypeCheckingVisitor.class));
 
-				final var visitor = new MySTCVisitor(sourceUnit, classNode, astVisitor);
+				final var visitor = new MySTCVisitor(sourceUnit, classNode);
 				visitor.setCompilationUnit(compilationUnit);
 				visitor.initialize();
 				visitor.visitClass(classNode);

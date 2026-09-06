@@ -31,13 +31,17 @@ import java.util.Map;
 import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
-import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
-import org.codehaus.groovy.ast.PropertyNode;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.DeclarationExpression;
+import org.codehaus.groovy.ast.expr.VariableExpression;
+import org.codehaus.groovy.ast.stmt.BlockStatement;
+import org.codehaus.groovy.ast.stmt.ExpressionStatement;
+import org.codehaus.groovy.syntax.Token;
+import org.codehaus.groovy.syntax.Types;
 
 import groovy.lang.groovydoc.Groovydoc;
-import groovyjarjarasm.asm.Opcodes;
 
 /**
  * Manages GDSL symbol loading and caching for the language server.
@@ -54,7 +58,7 @@ public class GdslSymbolsManager {
     /**
      * Loads GDSL symbols from the workspace.
      * Searches for gdsl.groovy in the workspace root and caches the results.
-     * 
+     *
      * @param workspaceRoot the root path of the workspace
      */
     public void loadGdslSymbols(Path workspaceRoot) {
@@ -99,7 +103,7 @@ public class GdslSymbolsManager {
 
     /**
      * Gets the cached GDSL symbols.
-     * 
+     *
      * @return a list of cached JenkinsSymbol objects
      */
     public List<JenkinsSymbol> getSymbols() {
@@ -114,7 +118,7 @@ public class GdslSymbolsManager {
      * Only ClassNodes that represent Groovy source files (not compiled Java
      * classes)
      * will receive GDSL symbol injections.
-     * 
+     *
      * @param classNodes collection of ClassNodes to potentially inject symbols into
      */
     public void injectGdslSymbolsIntoClassNodes(Collection<ClassNode> classNodes, ClassLoader cl) {
@@ -129,7 +133,7 @@ public class GdslSymbolsManager {
 
             for (JenkinsSymbol symbol : cachedSymbols) {
                 if (symbol.isProperty)
-                    injectSymbolAsProperty(classNode, symbol, cl);
+                    injectSymbolAsVariable(classNode.getMethod("run", new Parameter[] {}), symbol, cl);
                 else
                     injectSymbolAsMethod(classNode, symbol);
             }
@@ -172,43 +176,76 @@ public class GdslSymbolsManager {
         classNode.addMethod(methodNode);
     }
 
+    // @formatter:off
+    // This mapping was made by inspecting the source code of each of these org.jenkinsci.plugins.workflow.cps.GlobalVariable extensions' getValue() methods.
+    private static final Map<String, String> dslWrapperToActualType = Map.of(
+        // https://github.com/jenkinsci/docker-workflow-plugin/blob/c9dc97d74ce3fa7ea0d95f3e1fa5f07d685932ee/src/main/java/org/jenkinsci/plugins/docker/workflow/DockerDSL.java#L51
+        "org.jenkinsci.plugins.docker.workflow.DockerDSL", "org.jenkinsci.plugins.docker.workflow.Docker",
+
+        // https://github.com/jenkinsci/pipeline-model-definition-plugin/blob/6e7193cec599b402ee79ee9afc5b8a417eb43967/pipeline-model-definition/src/main/java/org/jenkinsci/plugins/pipeline/modeldefinition/ModelStepLoader.java#L61
+        "org.jenkinsci.plugins.pipeline.modeldefinition.ModelStepLoader", "org.jenkinsci.plugins.pipeline.modeldefinition.ModelInterpreter",
+
+        // https://github.com/jenkinsci/workflow-cps-plugin/blob/30c8c00684a37764a1083dd40b496ccdccc90dd7/plugin/src/main/java/org/jenkinsci/plugins/workflow/cps/EnvActionImpl.java#L202
+        "org.jenkinsci.plugins.workflow.cps.EnvActionImpl.Binder", "org.jenkinsci.plugins.workflow.cps.EnvActionImpl",
+
+        // https://github.com/jenkinsci/workflow-cps-plugin/blob/30c8c00684a37764a1083dd40b496ccdccc90dd7/plugin/src/main/java/org/jenkinsci/plugins/workflow/cps/ParamsVariable.java#L76
+        "org.jenkinsci.plugins.workflow.cps.ParamsVariable", "java.util.Map",
+
+        // https://github.com/jenkinsci/workflow-cps-plugin/blob/30c8c00684a37764a1083dd40b496ccdccc90dd7/plugin/src/main/java/org/jenkinsci/plugins/workflow/cps/RunWrapperBinder.java#L43
+        "org.jenkinsci.plugins.workflow.cps.RunWrapperBinder", "org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper",
+
+        // https://github.com/jenkinsci/workflow-multibranch-plugin/blob/ec5b9e1806eca83c9f6f7677c18f4bb2d2d1afdf/src/main/java/org/jenkinsci/plugins/workflow/multibranch/SCMVar.java#L67
+        "org.jenkinsci.plugins.workflow.multibranch.SCMVar", "hudson.scm.SCM",
+
+        // https://github.com/jenkinsci/artifactory-plugin/blob/73be393da5913343dd55e0ca5b09cab864930abb/src/main/java/org/jfrog/hudson/pipeline/scripted/dsl/ArtifactoryDSL.java#L29
+        "org.jfrog.hudson.pipeline.scripted.dsl.ArtifactoryDSL", "org.jfrog.hudson.pipeline.scripted.dsl.ArtifactoryPipelineGlobal",
+
+        // https://github.com/jenkinsci/artifactory-plugin/blob/73be393da5913343dd55e0ca5b09cab864930abb/src/main/java/org/jfrog/hudson/pipeline/scripted/dsl/JFrogDSL.java#L26
+        "org.jfrog.hudson.pipeline.scripted.dsl.JFrogDSL", "org.jfrog.hudson.pipeline.scripted.dsl.JFrogPipelineGlobal"
+    );
+    // @formatter:on
+
     /**
-     * Creates a synthetic property (field + property node) from a JenkinsSymbol
-     * and adds it to a ClassNode. Includes documentation from the symbol if
-     * available.
+     * Creates a synthetic local variable declaration for `pipeline` (or any
+     * JenkinsSymbol)
+     * and inserts it at the top of a MethodNode's BlockStatement body.
      */
-    private void injectSymbolAsProperty(ClassNode classNode, JenkinsSymbol symbol, ClassLoader cl) {
-        // Check if property or field already exists to avoid duplicates
-        if (classNode.getProperty(symbol.name) != null || classNode.getField(symbol.name) != null) {
+    private void injectSymbolAsVariable(final MethodNode methodNode, final JenkinsSymbol symbol, final ClassLoader cl) {
+        final var code = methodNode.getCode();
+        if (!(code instanceof final BlockStatement bs)) {
+            return; // nothing to inject into
+        }
+
+        // Avoid duplicate injection
+        if (bs.getVariableScope() != null
+                && bs.getVariableScope().getDeclaredVariable(symbol.name) != null) {
             return;
         }
 
         Class<?> clazz;
         try {
-            clazz = cl.loadClass(symbol.type);
+            clazz = cl.loadClass((dslWrapperToActualType.get(symbol.type) instanceof final String s) ? s : symbol.type);
         } catch (ClassNotFoundException e) {
             System.err.println("Could not find class: " + e.getMessage());
             return;
         }
 
-        // Create synthetic field node
-        FieldNode fieldNode = new FieldNode(
-                symbol.name,
-                0,
-                ClassHelper.make(clazz),
-                classNode,
-                null);
+        final var varExpr = new VariableExpression(symbol.name, ClassHelper.make(clazz));
+        final var declExpr = new DeclarationExpression(
+                varExpr,
+                Token.newSymbol(Types.ASSIGN, -1, -1),
+                ConstantExpression.NULL);
 
-        fieldNode.setSynthetic(true);
+        final var declStatement = new ExpressionStatement(declExpr);
 
-        // Add documentation if available from the GDSL symbol
+        // Optional: attach documentation the same way the FieldNode version did
         if (symbol.doc != null && !symbol.doc.isEmpty()) {
-            Groovydoc groovydoc = new Groovydoc("/** " + symbol.doc + " */", fieldNode);
-            fieldNode.putNodeMetaData(AnnotatedNode.DOC_COMMENT, groovydoc);
+            declStatement.putNodeMetaData(AnnotatedNode.DOC_COMMENT,
+                    new Groovydoc("/** " + symbol.doc + " */", declExpr));
         }
 
-        // Add field to the class
-        classNode.addField(fieldNode);
+        // Prepend so it's declared before any statement that references it
+        bs.getStatements().add(0, declStatement);
     }
 
     /**

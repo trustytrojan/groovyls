@@ -247,23 +247,33 @@ public class SemanticTokensProvider {
 		return encodeDeltaTokens(tokens);
 	}
 
-	private void processMethodCall(final MethodCallExpression call, final List<Token> tokens) {
-		final var methodText = call.getMethodAsString();
+	private void processMethodCall(final MethodCallExpression mce, final List<Token> tokens) {
+		// Properly color in a callable object as a method if it is being called
+		// directly in the source code.
+		final var callableObject =
+		// @formatter:off
+				GroovyASTUtils.getTypeOfNode(mce.getObjectExpression(), astVisitor) instanceof final ClassNode cn
+				&& cn.hasPossibleMethod("call", mce.getArguments())
+				&& GroovyLanguageServerUtils.astNodeToRange(mce) instanceof final Range r
+				&& !Ranges.getSubstring(currentDocumentText, r).matches(".*\\.\\s*call\\s*\\(.*");
+		// @formatter:on
 
-		// We only want to deal with calls like `obj.func()`, not `(expression)()`.
-		if (methodText == null || methodText.isEmpty())
+		final var methodText = callableObject ? mce.getObjectExpression().getText() : mce.getMethodAsString();
+
+		// We don't want to color in expressions that evaluate to a callable.
+		if (methodText == null || methodText.isEmpty() || (methodText.startsWith("(") && methodText.endsWith(")")))
 			return;
 
-		var actualMethod = call.<MethodNode>getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET);
+		var actualMethod = mce.<MethodNode>getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET);
 		if (actualMethod == null)
-			actualMethod = call.getMethodTarget();
+			actualMethod = mce.getMethodTarget();
 		if (actualMethod == null)
-			actualMethod = GroovyASTUtils.getMethodFromCallExpression(call, astVisitor);
+			actualMethod = GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
 		if (actualMethod == null)
 			return;
 
 		// If call is `obj.func()`, then this range spans `func`.
-		final var range = GroovyLanguageServerUtils.astNodeToRange(call.getMethod());
+		final var range = GroovyLanguageServerUtils.astNodeToRange(mce.getMethod());
 		if (range == null)
 			return;
 
@@ -303,7 +313,7 @@ public class SemanticTokensProvider {
 
 	private int getModifiersOfVariable(VariableExpression ve) {
 		List<SemanticTokenModifiers> modifiers = new ArrayList<>();
-		if (Modifier.isFinal(ve.getModifiers()))
+		if (Modifier.isFinal(ve.getAccessedVariable().getModifiers()))
 			modifiers.add(SemanticTokenModifiers.READONLY);
 		return SemanticTokenModifiers.bitset(modifiers.toArray(SemanticTokenModifiers[]::new));
 	}
