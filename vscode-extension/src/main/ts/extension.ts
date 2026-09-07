@@ -143,7 +143,7 @@ function startLanguageServer() {
           path.resolve(
             extensionContext.extensionPath,
             "bin",
-            "groovy-language-server-all.jar"
+            "groovyls-all.jar"
           ),
         ];
         //uncomment to allow a debugger to attach to the language server

@@ -1,10 +1,10 @@
 # Groovy Language Server with Sublime Text
 
-Learn how to configure [Sublime Text](https://www.sublimetext.com/) to add code intelligence for Groovy using the [Groovy Language Server](https://github.com/prominic/groovy-language-server).
+Learn how to configure [Sublime Text](https://www.sublimetext.com/) to add code intelligence for Groovy using the [Groovy Language Server](https://github.com/trustytrojan/groovyls).
 
 1. Install the [LSP package](https://github.com/tomv564/LSP) for Sublime Text.
 
-2. Download the [Groovy Language Server](https://github.com/prominic/groovy-language-server) source code from Github, and build the project using the instructions in the [_README_ file](https://github.com/prominic/groovy-language-server/blob/master/README.md).
+2. Download the [Groovy Language Server](https://github.com/trustytrojan/groovyls) source code from Github, and build the project using the instructions in the [_README_ file](https://github.com/trustytrojan/groovyls/blob/master/README.md).
 
 3. In Sublime Text, go to the **Preferences** menu → **Package Settings** → **LSP** → **Settings**. This will open the LSP package settings.
 
@@ -18,7 +18,7 @@ Learn how to configure [Sublime Text](https://www.sublimetext.com/) to add code 
          "command": [
            "java",
            "-jar",
-           "/absolute/path/to/groovy-language-server-all.jar"
+           "/absolute/path/to/groovyls-all.jar"
          ],
          "languageId": "groovy",
          "syntaxes": ["Packages/Groovy/Groovy.sublime-syntax"],
@@ -28,4 +28,4 @@ Learn how to configure [Sublime Text](https://www.sublimetext.com/) to add code 
    }
    ```
 
-   Be sure to change to _/absolute/path/to/groovy-language-server-all.jar_ to the real location of this _.jar_ file on your computer. It **must** be an absolute path.
+   Be sure to change to _/absolute/path/to/groovyls-all.jar_ to the real location of this _.jar_ file on your computer. It **must** be an absolute path.

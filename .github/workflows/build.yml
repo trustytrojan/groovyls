@@ -37,26 +37,22 @@ jobs:
           java-version: ${{ matrix.java-version }}
 
       - name: Build language server with Gradle
-        run: |
-          ./gradlew clean build
-          ls build/libs/groovy-language-server-all.jar
+        run: ./gradlew clean build
 
       - name: Build VSCode extension with Gradle
         working-directory: vscode-extension
-        run: |
-          ./gradlew clean build
-          ls build/groovyls-0.0.0.vsix
+        run: ./gradlew clean build
 
       - uses: actions/upload-artifact@v7
         if: ${{ matrix.java-version == '21' }}
         with:
-          path: build/libs/groovy-language-server-all.jar
+          path: build/libs/groovyls-all.jar
           archive: false
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v7
         if: ${{ matrix.java-version == '21' }}
         with:
-          path: vscode-extension/build/groovy-*.vsix
+          path: vscode-extension/build/groovyls-*.vsix
           archive: false
           if-no-files-found: error

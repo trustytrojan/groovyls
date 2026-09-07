@@ -52,17 +52,3 @@ dependencies {
   // The bridge provider that allows Resolver to understand Maven POM file layouts
   implementation 'org.apache.maven:maven-resolver-provider:3.9.6'
 }
-
-// assuming that Moonshine-IDE is checked out in a folder that has the same
-// parent folder as groovy-language-server, copies the built .jar file to the
-// appropriate location
-task deployMoonshine(type: Copy) {
-    dependsOn(build)
-    from "build/libs/groovy-language-server-all.jar"
-    into "../Moonshine-IDE/ide/MoonshineSharedCore/src/elements/groovy-language-server/"
-}
-task deployMoonshineTest(type: Copy) {
-    dependsOn(build)
-    from "build/libs/groovy-language-server-all.jar"
-    into "../Moonshine-IDE/ide/MoonshineDESKTOPevolved/bin-debug/elements/groovy-language-server/"
-}
