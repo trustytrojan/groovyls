@@ -1,3 +1,22 @@
+////////////////////////////////////////////////////////////////////////////////
+// Copyright 2026 trustytrojan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License
+//
+// Author: trustytrojan
+// No warranty of merchantability or fitness of any kind.
+// Use this software at your own risk.
+////////////////////////////////////////////////////////////////////////////////
 package net.prominic.groovyls;
 
 import java.nio.file.Files;
@@ -34,6 +53,7 @@ public class StaticTypeCheckingTests {
 	private GroovyServices services;
 	private Path workspaceRoot;
 	private Path srcRoot;
+	private TextDocumentIdentifier textDocument;
 
 	@BeforeEach
 	void setup() {
@@ -74,169 +94,151 @@ public class StaticTypeCheckingTests {
 		services = null;
 		workspaceRoot = null;
 		srcRoot = null;
+		textDocument = null;
 	}
 
-	private String getHoverContentAtPosition(
-			final TextDocumentIdentifier textDocument,
-			final int line,
-			final int col) throws Exception {
+	private String getHoverContentAtPosition(final int line, final int col) throws Exception {
+		if (textDocument == null)
+			throw new IllegalStateException("textDocument is null");
 		final var position = new Position(line, col);
 		final var result = services.hover(new HoverParams(textDocument, position)).get();
 		final var hoverContents = result.getContents();
 		return hoverContents.getRight().getValue().replace("```groovy\n", "").replace("\n```", "");
 	}
 
+	private void openTextDocument(final String contents) {
+		final var filePath = srcRoot.resolve("TypeCheckingTest.groovy");
+		final var uri = filePath.toUri().toString();
+		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents);
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
+		textDocument = new TextDocumentIdentifier(uri);
+	}
+
 	@Test
 	void testVariableInferredTypePropagatesToSubsequentVariables() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
+		openTextDocument("""
 				def x = 3
 				def y = x
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 0, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 8), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "int y");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 4), "int y");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 8), "int x");
 	}
 
 	@Test
 	void testVariableInferredTypeChangesOnAssignment() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
+		openTextDocument("""
 				def x = 3
 				def y = (x = '')
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 0, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "String y");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 9), "String x");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 0), "java.lang.String");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 4), "String y");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 9), "String x");
 	}
 
 	@Test
 	void testVariableInferredTypeBecomesLUBAfterIfStatement_Primitives() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
+		openTextDocument("""
 				def x = 3
 				if (x == 3)
 					x = 4.0f
 				x
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 0, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 1), "float x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 3, 0), "float x");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(2, 1), "float x");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "float x");
 	}
 
 	@Test
 	void testVariableInferredTypeBecomesLUBAfterIfElseStatement_Primitives() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
+		openTextDocument("""
 				def x = 3
 				if (x == 3)
 					x = 4.0f
 				else
 					x = 4.0d
 				x
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 0, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 1), "float x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 4, 1), "double x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 5, 0), "double x");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(2, 1), "float x");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 1), "double x");
+		Assertions.assertEquals(getHoverContentAtPosition(5, 0), "double x");
 	}
 
 	@Test
 	void testVariableInferredTypeBecomesLUBAfterIfStatement_Serializable() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
+		openTextDocument("""
 				def x = 3
 				if (x == 3)
 					x = ''
 				x
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 0, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 1), "String x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 3, 0), "Serializable x");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(2, 1), "String x");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "Serializable x");
 	}
 
 	@Test
 	void testVariableInferredTypeBecomesLUBAfterIfStatement_Object() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
+		openTextDocument("""
 				def x = 3
 				if (x == 3)
 					x = new Object()
 				x
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 0, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 1), "Object x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 3, 0), "Object x");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(2, 1), "Object x");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "Object x");
 	}
 
 	@Test
 	void testVariableInferredTypeBecomesLUBAfterIfStatement_Number() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
+		openTextDocument("""
 				def x = 3
 				if (x == 3)
 					x = 4.0
 				x
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 0, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "int x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 1), "BigDecimal x");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 3, 0), "Number x");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "int");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 4), "int x");
+		Assertions.assertEquals(getHoverContentAtPosition(2, 1), "BigDecimal x");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "Number x");
 	}
 
 	@Test
 	void testCallableObject() throws Exception {
-		final var filePath = srcRoot.resolve("TypeInference.groovy");
-		final var uri = filePath.toUri().toString();
-		final var contents = """
-				def call() {}
-				def obj = new TypeInference()
+		openTextDocument("""
+				class A {
+					def call() {}
+				}
+				def obj = new A()
 				obj()
-				""";
-		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents.toString());
-		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
-		final var textDocument = new TextDocumentIdentifier(uri);
+				""");
 
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 1, 4), "TypeInference obj");
-		Assertions.assertEquals(getHoverContentAtPosition(textDocument, 2, 0), "Object TypeInference.call()");
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "Object A.call()");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "Object A.call()");
 	}
 }
