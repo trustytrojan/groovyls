@@ -26,7 +26,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.ConstructorNode;
 import org.eclipse.lsp4j.Location;
@@ -41,37 +40,38 @@ import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 
 public class DefinitionProvider {
-	private ASTNodeVisitor ast;
+	private final ASTNodeVisitor ast;
 
-	public DefinitionProvider(ASTNodeVisitor ast) {
+	public DefinitionProvider(final ASTNodeVisitor ast) {
 		this.ast = ast;
 	}
 
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> provideDefinition(
-			TextDocumentIdentifier textDocument, Position position) {
+			final TextDocumentIdentifier textDocument,
+			final Position position) {
 		if (ast == null) {
 			// this shouldn't happen, but let's avoid an exception if something
 			// goes terribly wrong.
 			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
 		}
-		URI uri = URI.create(textDocument.getUri());
-		ASTNode offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
+		final var uri = URI.create(textDocument.getUri());
+		final var offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
 			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
 		}
 
-		ASTNode definitionNode = GroovyASTUtils.getDefinition(offsetNode, true, ast);
-		// System.out.printf("provideDefinition: definitionNode: %s\n", definitionNode);
+		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, true, ast);
+		// System.out.println("provideDefinition: definitionNode: " + definitionNode);
 		if (definitionNode == null) {
 			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
 		}
 
-		URI definitionURI = ast.getURI(definitionNode);
+		var definitionURI = ast.getURI(definitionNode);
 		if (definitionURI == null) {
 			definitionURI = uri;
 		}
 
-		Location location = GroovyLanguageServerUtils.astNodeToLocation(definitionNode, definitionURI);
+		var location = GroovyLanguageServerUtils.astNodeToLocation(definitionNode, definitionURI);
 		if (location == null) {
 			if (definitionNode instanceof ConstructorNode) {
 				// This will "fall-through" to the if-block below!

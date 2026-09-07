@@ -100,7 +100,7 @@ public class SignatureHelpProvider {
 				parameters.add(paramInfo);
 			}
 			SignatureInformation sigInfo = new SignatureInformation();
-			sigInfo.setLabel(GroovyNodeToStringUtils.methodToString(method, ast));
+			sigInfo.setLabel(GroovyNodeToStringUtils.methodToString(method, ast, null));
 			sigInfo.setParameters(parameters);
 			Groovydoc methodGroovydoc = method.getGroovydoc();
 			String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(methodGroovydoc);

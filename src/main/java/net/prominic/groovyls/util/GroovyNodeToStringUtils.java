@@ -1,5 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright 2022 Prominic.NET, Inc.
+// Copyright 2026 trustytrojan
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,71 +15,106 @@
 // limitations under the License
 //
 // Author: Prominic.NET, Inc.
+// Author: trustytrojan
 // No warranty of merchantability or fitness of any kind.
 // Use this software at your own risk.
 ////////////////////////////////////////////////////////////////////////////////
 package net.prominic.groovyls.util;
 
 import org.codehaus.groovy.ast.ASTNode;
+import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.ConstructorNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.Variable;
+import org.codehaus.groovy.ast.tools.WideningCategories.LowestUpperBoundClassNode;
 
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 
 public class GroovyNodeToStringUtils {
-	public static String constructorToString(ConstructorNode constructorNode, ASTNodeVisitor ast) {
-		StringBuilder builder = new StringBuilder();
-		builder.append(constructorNode.getDeclaringClass().getName());
-		builder.append("(");
-		builder.append(parametersToString(constructorNode.getParameters(), ast));
-		builder.append(")");
-		return builder.toString();
+	public static String constructorToString(final ConstructorNode cn, final ASTNodeVisitor ast) {
+		return "%s(%s)".formatted(
+				cn.getDeclaringClass().getName(),
+				parametersToString(cn.getParameters(), ast));
 	}
 
-	public static String methodToString(MethodNode methodNode, ASTNodeVisitor ast) {
-		if (methodNode instanceof ConstructorNode) {
-			return constructorToString((ConstructorNode) methodNode, ast);
+	public static String methodToString(final MethodNode mn, final ASTNodeVisitor ast,
+			final ClassNode inferredReturnType) {
+		if (mn instanceof final ConstructorNode cn) {
+			return constructorToString(cn, ast);
 		}
-		StringBuilder builder = new StringBuilder();
-		ClassNode returnType = methodNode.getReturnType();
-		builder.append(returnType.getNameWithoutPackage());
-		builder.append(" ");
-		builder.append(methodNode.getDeclaringClass().getName());
-		builder.append('.');
-		builder.append(methodNode.getName());
-		builder.append("(");
-		builder.append(parametersToString(methodNode.getParameters(), ast));
-		builder.append(")");
-		return builder.toString();
+		return "%s %s.%s(%s)".formatted(
+				// In the case of methods that return a generic type, like
+				// `T List<T>.getFirst()`, `inferredType` contains what `T` should be, so use
+				// it over the method's return type which is usually just `Object`.
+				prettyPrintTypeWithoutPackage((inferredReturnType != null) ? inferredReturnType : mn.getReturnType()),
+				mn.getDeclaringClass().getName(),
+				mn.getName(),
+				parametersToString(mn.getParameters(), ast));
 	}
 
-	public static String parametersToString(Parameter[] params, ASTNodeVisitor ast) {
-		StringBuilder builder = new StringBuilder();
+	public static String parametersToString(final Parameter[] params, final ASTNodeVisitor ast) {
+		final var sb = new StringBuilder();
 		for (int i = 0; i < params.length; i++) {
 			if (i > 0) {
-				builder.append(", ");
+				sb.append(", ");
 			}
-			Parameter paramNode = params[i];
-			builder.append(variableToString(paramNode, ast));
+			final var paramNode = params[i];
+			sb.append(variableToString(paramNode, ast));
 		}
-		return builder.toString();
+		return sb.toString();
 	}
 
-	public static String variableToString(Variable variable, ASTNodeVisitor ast) {
-		StringBuilder builder = new StringBuilder();
-		ClassNode varType = null;
-		if (variable instanceof ASTNode) {
-			varType = GroovyASTUtils.getTypeOfNode((ASTNode) variable, ast);
-		} else {
-			varType = variable.getType();
+	// Modified copy of ClassNode.toString(boolean)
+	public static String prettyPrintType(final ClassNode cn, final String name) {
+		if (cn.isArray()) {
+			return name + "[]";
 		}
-		builder.append(varType.getNameWithoutPackage());
-		builder.append(" ");
-		builder.append(variable.getName());
-		return builder.toString();
+		final var placeholder = cn.isGenericsPlaceHolder();
+		final var ret = new StringBuilder(!placeholder ? name : cn.getUnresolvedName());
+		{
+			final var genericsTypes = cn.getGenericsTypes();
+			if (!placeholder && genericsTypes != null) {
+				ret.append('<');
+				for (int i = 0, n = genericsTypes.length; i < n; i += 1) {
+					if (i != 0)
+						ret.append(", ");
+					ret.append(genericsTypes[i].getType().getNameWithoutPackage());
+				}
+				ret.append('>');
+			}
+		}
+		return ret.toString();
+	}
+
+	public static String prettyPrintTypeWithoutPackage(final ClassNode cn) {
+		return prettyPrintType(cn, cn.getNameWithoutPackage());
+	}
+
+	public static String prettyPrintTypeWithPackage(final ClassNode cn) {
+		return prettyPrintType(cn, cn.getName());
+	}
+
+	public static String variableToString(final Variable v, final ASTNodeVisitor ast) {
+		ClassNode cn;
+		if (v instanceof final ASTNode an) {
+			cn = GroovyASTUtils.getTypeOfNode(an, ast);
+		} else {
+			cn = v.getType();
+		}
+		if (cn instanceof final LowestUpperBoundClassNode lub) {
+			// This bypasses a bug in LowestUpperBoundClassNode's constructor:
+			// It flattens all interfaces' generics even if some interfaces
+			// (the first one in particular, which is chosen as the "compileTimeClassNode")
+			// are NOT generic types.
+			final var upper = lub.getSuperClass();
+			cn = (ClassHelper.isObjectType(upper) && lub.getInterfaces() instanceof final ClassNode[] interfaces
+					&& interfaces.length > 0)
+							? interfaces[0]
+							: upper;
+		}
+		return "%s %s".formatted(prettyPrintTypeWithoutPackage(cn), v.getName());
 	}
 }

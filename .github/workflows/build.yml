@@ -2,6 +2,7 @@ name: Build
 
 on:
   push:
+    branches: [master]
     paths:
       - '**/*gradle*'
       - src/**/*.java
@@ -10,12 +11,19 @@ on:
       - .github/workflows/*.yml
   pull_request:
     branches: [master]
+    paths:
+      - '**/*gradle*'
+      - src/**/*.java
+      - vscode-extension/src/**/*.ts
+      - vscode-extension/src/*.js*
+      - .github/workflows/*.yml
 
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
-        java-version: ["17", "21", "25"]
+        java-version: ["21", "25"]
 
     runs-on: ubuntu-latest
 
@@ -36,15 +44,15 @@ jobs:
         run: ./gradlew clean build
 
       - uses: actions/upload-artifact@v7
-        if: ${{ matrix.java-version == '17' }}
+        if: ${{ matrix.java-version == '21' }}
         with:
-          path: build/libs/groovy-language-server-all.jar
+          path: build/libs/groovyls-all.jar
           archive: false
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v7
-        if: ${{ matrix.java-version == '17' }}
+        if: ${{ matrix.java-version == '21' }}
         with:
-          path: vscode-extension/build/groovy-*.vsix
+          path: vscode-extension/build/groovyls-*.vsix
           archive: false
           if-no-files-found: error

@@ -1,5 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright 2022 Prominic.NET, Inc.
+// Copyright 2026 trustytrojan
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,6 +15,7 @@
 // limitations under the License
 //
 // Author: Prominic.NET, Inc.
+// Author: trustytrojan
 // No warranty of merchantability or fitness of any kind.
 // Use this software at your own risk.
 ////////////////////////////////////////////////////////////////////////////////
@@ -119,7 +121,7 @@ class GroovyServicesSignatureHelpTests {
 		List<SignatureInformation> signatures = signatureHelp.getSignatures();
 		Assertions.assertEquals(1, signatures.size());
 		SignatureInformation signature = signatures.get(0);
-		Assertions.assertEquals("public void method(int param0)", signature.getLabel());
+		Assertions.assertEquals("void SignatureHelp.method(int param0)", signature.getLabel());
 		List<ParameterInformation> params = signature.getParameters();
 		Assertions.assertEquals(1, params.size());
 		ParameterInformation param0 = params.get(0);
@@ -147,7 +149,7 @@ class GroovyServicesSignatureHelpTests {
 		List<SignatureInformation> signatures = signatureHelp.getSignatures();
 		Assertions.assertEquals(1, signatures.size());
 		SignatureInformation signature = signatures.get(0);
-		Assertions.assertEquals("public void method(int param0, String param1)", signature.getLabel());
+		Assertions.assertEquals("void SignatureHelp.method(int param0, String param1)", signature.getLabel());
 		List<ParameterInformation> params = signature.getParameters();
 		Assertions.assertEquals(2, params.size());
 		ParameterInformation param0 = params.get(0);
@@ -177,7 +179,7 @@ class GroovyServicesSignatureHelpTests {
 		List<SignatureInformation> signatures = signatureHelp.getSignatures();
 		Assertions.assertEquals(1, signatures.size());
 		SignatureInformation signature = signatures.get(0);
-		Assertions.assertEquals("public void method(int param0, String param1)", signature.getLabel());
+		Assertions.assertEquals("void SignatureHelp.method(int param0, String param1)", signature.getLabel());
 		List<ParameterInformation> params = signature.getParameters();
 		Assertions.assertEquals(2, params.size());
 		ParameterInformation param0 = params.get(0);

@@ -1,16 +1,16 @@
 {
-  "name": "groovy",
-  "displayName": "Groovy",
-  "description": "Language support for Groovy",
+  "name": "groovyls",
+  "displayName": "groovyls",
+  "description": "Groovy language server",
   "version": "0.0.0",
-  "publisher": "publisher",
-  "homepage": "https://github.com/prominic/groovy-language-server",
+  "publisher": "trustytrojan",
+  "homepage": "https://github.com/trustytrojan/groovyls",
   "repository": {
     "type": "git",
-    "url": "https://github.com/prominic/groovy-language-server.git"
+    "url": "https://github.com/trustytrojan/groovyls.git"
   },
   "bugs": {
-    "url": "https://github.com/prominic/groovy-language-server/issues"
+    "url": "https://github.com/trustytrojan/groovyls/issues"
   },
   "license": "Apache-2.0",
   "private": true,
@@ -26,7 +26,7 @@
     "LICENSE",
     "extension.js",
     "extension.js.map",
-    "bin/groovy-language-server-all.jar"
+    "bin/groovyls-all.jar"
   ],
   "main": "extension",
   "engines": {
