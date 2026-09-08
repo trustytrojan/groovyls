@@ -86,7 +86,7 @@ public class SemanticTokensProvider {
 
 		public final String value;
 
-		private SemanticTokenTypes(String s) {
+		private SemanticTokenTypes(final String s) {
 			value = s;
 		}
 
@@ -109,7 +109,7 @@ public class SemanticTokensProvider {
 
 		public final String value;
 
-		private SemanticTokenModifiers(String s) {
+		private SemanticTokenModifiers(final String s) {
 			value = s;
 		}
 
@@ -117,27 +117,26 @@ public class SemanticTokensProvider {
 			return Stream.of(values()).map(t -> t.value).toList();
 		}
 
-		public static int bitset(SemanticTokenModifiers... modifiers) {
-			int bitset = 0;
-			for (SemanticTokenModifiers m : modifiers) {
+		public static int bitset(final SemanticTokenModifiers... modifiers) {
+			var bitset = 0;
+			for (final var m : modifiers)
 				bitset |= (1 << m.ordinal());
-			}
 			return bitset;
 		}
 	}
 
 	private final ASTNodeVisitor astVisitor;
 
-	public SemanticTokensProvider(FileContentsTracker fileContentsTracker, ASTNodeVisitor astVisitor) {
+	public SemanticTokensProvider(final FileContentsTracker fileContentsTracker, final ASTNodeVisitor astVisitor) {
 		this.fileContentsTracker = fileContentsTracker;
 		this.astVisitor = astVisitor;
 	}
 
-	private Token makeTokenFromRange(Range r, int type, int modifiers) {
-		final Position start = r.getStart();
-		final int startLine = start.getLine();
-		final int startChar = start.getCharacter();
-		final int endChar = r.getEnd().getCharacter();
+	private Token makeTokenFromRange(final Range r, final int type, final int modifiers) {
+		final var start = r.getStart();
+		final var startLine = start.getLine();
+		final var startChar = start.getCharacter();
+		final var endChar = r.getEnd().getCharacter();
 		return new Token(startLine, startChar, endChar - startChar, type, modifiers);
 	}
 
@@ -200,63 +199,64 @@ public class SemanticTokensProvider {
 
 	private String currentDocumentText;
 
-	public SemanticTokens provideFull(TextDocumentIdentifier textDocument) {
-		URI uri = URI.create(textDocument.getUri());
-		String text = currentDocumentText = fileContentsTracker.getContents(uri);
-		if (text == null || astVisitor == null || uri == null) {
-			return new SemanticTokens(new ArrayList<>());
-		}
+	@SuppressWarnings("null")
+	public SemanticTokens provideFull(final TextDocumentIdentifier textDocument) {
+		final var uri = URI.create(textDocument.getUri());
+		currentDocumentText = fileContentsTracker.getContents(uri);
 
-		List<Token> tokens = new ArrayList<>();
-		List<ASTNode> nodes = astVisitor.getNodes(uri);
+		if (currentDocumentText == null || astVisitor == null || uri == null)
+			return new SemanticTokens(new ArrayList<>());
+
+		final var tokens = new ArrayList<Token>();
 
 		// System.err.println("--- Start of text document: " + uri);
-		for (ASTNode node : nodes) {
+		for (final var node : astVisitor.getNodes(uri)) {
 			// debugPrint(node, text);
 
-			if (node instanceof ConstructorCallExpression) {
-				ClassNode type = ((ConstructorCallExpression) node).getType();
+			if (node instanceof final ConstructorCallExpression cce) {
+				final var type = cce.getType();
 				if (type.equals(ClassHelper.OBJECT_TYPE))
 					continue;
-				final Range r = GroovyLanguageServerUtils.astNodeToRange(type);
+				final var r = GroovyLanguageServerUtils.astNodeToRange(type);
 				if (r == null)
 					continue;
 				tokens.add(makeTokenFromRange(r, SemanticTokenTypes.METHOD.ordinal(), 0));
 			} else if (node instanceof final DeclarationExpression de
 					&& de.getVariableExpression() instanceof final VariableExpression ve) {
-				ClassNode type = ve.getOriginType();
-				final Range r = GroovyLanguageServerUtils.astNodeToRange(type);
+				final var r = GroovyLanguageServerUtils.astNodeToRange(ve.getOriginType());
 				if (r == null)
 					continue;
 				tokens.add(makeTokenFromRange(r, SemanticTokenTypes.TYPE.ordinal(), 0));
-			} else if (node instanceof MethodCallExpression) {
-				processMethodCall((MethodCallExpression) node, tokens);
-			} else if (node instanceof PropertyExpression) {
-				processPropertyExpression((PropertyExpression) node, tokens);
+			} else if (node instanceof final MethodCallExpression mce) {
+				processMethodCall(mce, tokens);
+			} else if (node instanceof final PropertyExpression pe) {
+				processPropertyExpression(pe, tokens);
 			} else {
-				processDeclaration(node, text, tokens);
+				processDeclaration(node, tokens);
 			}
 		}
 
-		if (tokens.isEmpty()) {
+		if (tokens.isEmpty())
 			return new SemanticTokens(new ArrayList<>());
-		}
 
-		tokens.sort(Comparator.comparingInt((Token t) -> t.line).thenComparingInt(t -> t.startChar));
+		tokens.sort(Comparator.comparingInt(Token::line).thenComparingInt(Token::startChar));
 
-		return encodeDeltaTokens(tokens);
+		return Token.encodeList(tokens);
 	}
 
 	private void processMethodCall(final MethodCallExpression mce, final List<Token> tokens) {
 		// Properly color in a callable object as a method if it is being called
 		// directly in the source code.
-		final var callableObject =
-		// @formatter:off
-				GroovyASTUtils.getTypeOfNode(mce.getObjectExpression(), astVisitor) instanceof final ClassNode cn
-				&& cn.hasPossibleMethod("call", mce.getArguments())
-				&& GroovyLanguageServerUtils.astNodeToRange(mce) instanceof final Range r
-				&& !Ranges.getSubstring(currentDocumentText, r).matches(".*\\.\\s*call\\s*\\(.*");
-		// @formatter:on
+		final var typeOfNode = GroovyASTUtils.getTypeOfNode(mce.getObjectExpression(), astVisitor);
+		final var hasCallMethod = (typeOfNode != null)
+				? typeOfNode.hasPossibleMethod("call", mce.getArguments())
+				: false;
+		final var callRange = GroovyLanguageServerUtils.astNodeToRange(mce);
+		final var notExplicitCallMethodCall = (callRange != null)
+				? Ranges.getSubstring(currentDocumentText, callRange).matches(".*\\.\\s*call\\s*\\(.*")
+				: false;
+
+		final var callableObject = hasCallMethod && notExplicitCallMethodCall;
 
 		final var methodText = callableObject ? mce.getObjectExpression().getText() : mce.getMethodAsString();
 
@@ -281,44 +281,30 @@ public class SemanticTokensProvider {
 		final var charno = range.getStart().getCharacter();
 
 		tokens.add(new Token(lineno, charno, methodText.length(), SemanticTokenTypes.METHOD.ordinal(),
-				getModifiersOfMethod(actualMethod)));
+				getModifiersOfNode(actualMethod)));
 	}
 
-	private int getModifiersOfMethod(MethodNode method) {
-		List<SemanticTokenModifiers> modifiers = new ArrayList<>();
-		if (method.isAbstract())
-			modifiers.add(SemanticTokenModifiers.ABSTRACT);
-		if (method.isStatic())
-			modifiers.add(SemanticTokenModifiers.STATIC);
+	private int getModifiersOfNode(final ASTNode node) {
+		final var modifiers = new ArrayList<SemanticTokenModifiers>();
+		switch (node) {
+			case final MethodNode mn -> {
+				if (mn.isAbstract())
+					modifiers.add(SemanticTokenModifiers.ABSTRACT);
+				if (mn.isStatic())
+					modifiers.add(SemanticTokenModifiers.STATIC);
+			}
+			case final Variable v -> {
+				if (v.isStatic())
+					modifiers.add(SemanticTokenModifiers.STATIC);
+				if (v.isFinal())
+					modifiers.add(SemanticTokenModifiers.READONLY);
+			}
+			default -> {}
+		}
 		return SemanticTokenModifiers.bitset(modifiers.toArray(SemanticTokenModifiers[]::new));
 	}
 
-	private int getModifiersOfField(FieldNode field) {
-		List<SemanticTokenModifiers> modifiers = new ArrayList<>();
-		if (field.isStatic())
-			modifiers.add(SemanticTokenModifiers.STATIC);
-		if (field.isFinal())
-			modifiers.add(SemanticTokenModifiers.READONLY);
-		return SemanticTokenModifiers.bitset(modifiers.toArray(SemanticTokenModifiers[]::new));
-	}
-
-	private int getModifiersOfProperty(PropertyNode property) {
-		List<SemanticTokenModifiers> modifiers = new ArrayList<>();
-		if (property.isStatic())
-			modifiers.add(SemanticTokenModifiers.STATIC);
-		if (Modifier.isFinal(property.getModifiers()))
-			modifiers.add(SemanticTokenModifiers.READONLY);
-		return SemanticTokenModifiers.bitset(modifiers.toArray(SemanticTokenModifiers[]::new));
-	}
-
-	private int getModifiersOfVariable(VariableExpression ve) {
-		List<SemanticTokenModifiers> modifiers = new ArrayList<>();
-		if (Modifier.isFinal(ve.getAccessedVariable().getModifiers()))
-			modifiers.add(SemanticTokenModifiers.READONLY);
-		return SemanticTokenModifiers.bitset(modifiers.toArray(SemanticTokenModifiers[]::new));
-	}
-
-	private void processPropertyExpression(PropertyExpression pe, List<Token> tokens) {
+	private void processPropertyExpression(final PropertyExpression pe, final List<Token> tokens) {
 		// propName and propRange represent the `prop` part of `obj.prop`.
 		final var propName = pe.getPropertyAsString();
 		if (propName == null || propName.isEmpty())
@@ -373,55 +359,37 @@ public class SemanticTokensProvider {
 
 		var modifiers = 0;
 		if (fieldNode != null)
-			modifiers = getModifiersOfField(fieldNode);
+			modifiers = getModifiersOfNode(fieldNode);
 		else if (propertyNode != null)
-			modifiers = getModifiersOfProperty(propertyNode);
+			modifiers = getModifiersOfNode(propertyNode);
 
 		tokens.add(new Token(lineno, charno, propName.length(), SemanticTokenTypes.PROPERTY.ordinal(), modifiers));
 	}
 
 	// probably should be named `processSymbol` and/or should be split up by type a
 	// bit more
-	private void processDeclaration(ASTNode node, String text, List<Token> tokens) {
-		Range range = GroovyLanguageServerUtils.astNodeToRange(node);
-		if (range == null)
-			return;
-
-		if (node instanceof MethodNode && ((MethodNode) node).isConstructor()) {
-			processConstructorDeclaration((MethodNode) node, text, range, tokens);
+	private void processDeclaration(final ASTNode node, final List<Token> tokens) {
+		if (node instanceof final MethodNode mn && mn.isConstructor()) {
+			processConstructorDeclaration(mn, tokens);
 			return;
 		}
 
-		String name = getDeclarationName(node);
-		if (name == null || "this".equals(name) || "super".equals(name))
+		final var name = getDeclarationName(node);
+		if (name == null || name.equals("this") || name.equals("super"))
 			return;
 
-		int startOffset = lineColToOffset(text, range.getStart().getLine(), range.getStart().getCharacter());
-		int endOffset = lineColToOffset(text, range.getEnd().getLine(), range.getEnd().getCharacter());
-		if (startOffset < 0 || endOffset <= startOffset)
+		final var identifierRange = findIdentifierRange(node, name);
+		if (identifierRange == null)
 			return;
 
-		int found = findExactTokenOffset(text, name, startOffset, endOffset);
-		if (found == -1)
-			return;
+		final var tokenType = tokenTypeIndexFromNode(node);
+		final var modifiers = getModifiersOfNode(node);
 
-		Position pos = toLineCol(text, found);
-		int tokenType = tokenTypeIndexFromNode(node);
-
-		int modifiers = 0;
-		if (node instanceof FieldNode)
-			modifiers = getModifiersOfField((FieldNode) node);
-		else if (node instanceof PropertyNode)
-			modifiers = getModifiersOfProperty((PropertyNode) node);
-		else if (node instanceof MethodNode)
-			modifiers = getModifiersOfMethod((MethodNode) node);
-		else if (node instanceof VariableExpression)
-			modifiers = getModifiersOfVariable((VariableExpression) node);
-
-		tokens.add(new Token(pos.getLine(), pos.getCharacter(), name.length(), tokenType, modifiers));
+		tokens.add(new Token(identifierRange.getStart().getLine(), identifierRange.getStart().getCharacter(),
+				name.length(), tokenType, modifiers));
 	}
 
-	private int tokenTypeIndexFromNode(ASTNode node) {
+	private int tokenTypeIndexFromNode(final ASTNode node) {
 		if (node instanceof MethodNode
 				|| ClassHelper.CLOSURE_TYPE.equals(GroovyASTUtils.getTypeOfNode(node, astVisitor)))
 			return SemanticTokenTypes.FUNCTION.ordinal();
@@ -432,92 +400,78 @@ public class SemanticTokensProvider {
 		return SemanticTokenTypes.VARIABLE.ordinal();
 	}
 
-	private void processConstructorDeclaration(MethodNode mn, String text, Range range, List<Token> tokens) {
-		ClassNode declaringClass = mn.getDeclaringClass();
-		String className = declaringClass != null ? declaringClass.getNameWithoutPackage() : null;
+	private void processConstructorDeclaration(final MethodNode mn, final List<Token> tokens) {
+		final var declaringClass = mn.getDeclaringClass();
+		if (declaringClass == null)
+			return;
+
+		final var className = declaringClass.getNameWithoutPackage();
 		if (className == null || className.isEmpty())
 			return;
 
-		int startOffsetCtor = lineColToOffset(text, range.getStart().getLine(), range.getStart().getCharacter());
-		int endOffsetCtor = lineColToOffset(text, range.getEnd().getLine(), range.getEnd().getCharacter());
-
-		int foundCtor = findExactTokenOffset(text, className, startOffsetCtor, endOffsetCtor);
-		if (foundCtor == -1)
+		final var identifierRange = findIdentifierRange(mn, className);
+		if (identifierRange == null)
 			return;
 
-		Position posCtor = toLineCol(text, foundCtor);
-		int tokenTypeCtor = SemanticTokenTypes.METHOD.ordinal();
-		tokens.add(new Token(posCtor.getLine(), posCtor.getCharacter(), className.length(), tokenTypeCtor,
-				getModifiersOfMethod(mn)));
+		tokens.add(new Token(identifierRange.getStart().getLine(), identifierRange.getStart().getCharacter(),
+				className.length(), SemanticTokenTypes.METHOD.ordinal(), getModifiersOfNode(mn)));
 	}
 
-	public static String getDeclarationName(ASTNode node) {
-		if (node instanceof MethodNode)
-			return ((MethodNode) node).getName();
-		if (node instanceof Variable)
-			return ((Variable) node).getName();
-		if (node instanceof FieldNode)
-			return ((FieldNode) node).getName();
-		if (node instanceof PropertyNode)
-			return ((PropertyNode) node).getName();
-		if (node instanceof Parameter)
-			return ((Parameter) node).getName();
-		if (node instanceof ClassNode)
-			return ((ClassNode) node).getName();
-		if (node instanceof ImportNode)
-			return ((ImportNode) node).getClassName();
-		return null;
+	public static String getDeclarationName(final ASTNode node) {
+		return switch (node) {
+			case final MethodNode mn -> mn.getName();
+			case final Variable v -> v.getName();
+			case final ClassNode cn -> cn.getName();
+			case final ImportNode in -> in.getClassName();
+			default -> null;
+		};
 	}
 
-	private int findExactTokenOffset(String text, String name, int startOffset, int endOffset) {
-		int found = startOffset;
+	private Range findIdentifierRange(final ASTNode node, final String name) {
+		final var text = currentDocumentText;
+
+		final var nodeRange = GroovyLanguageServerUtils.astNodeToRange(node);
+		if (nodeRange == null)
+			return null;
+
+		final var startOffset = lineColToOffset(text, nodeRange.getStart().getLine(),
+				nodeRange.getStart().getCharacter());
+		final var endOffset = lineColToOffset(text, nodeRange.getEnd().getLine(), nodeRange.getEnd().getCharacter());
+		if (startOffset < 0 || endOffset <= startOffset)
+			return null;
+
+		final var identifierOffset = findExactTokenOffset(text, name, startOffset, endOffset);
+		if (identifierOffset < 0)
+			return null;
+
+		final var start = toLineCol(text, identifierOffset);
+		final var end = toLineCol(text, identifierOffset + name.length());
+		return new Range(start, end);
+	}
+
+	private int findExactTokenOffset(final String text, final String name, final int startOffset, final int endOffset) {
+		var found = startOffset;
 		while (found >= 0) {
 			found = text.indexOf(name, found);
-			if (found == -1 || found >= endOffset) {
+			if (found == -1 || found >= endOffset)
 				return -1;
-			}
-			boolean beforeValid = (found == 0) || !Character.isJavaIdentifierPart(text.charAt(found - 1));
-			boolean afterValid = (found + name.length() >= text.length())
+			final var beforeValid = (found == 0) || !Character.isJavaIdentifierPart(text.charAt(found - 1));
+			final var afterValid = (found + name.length() >= text.length())
 					|| !Character.isJavaIdentifierPart(text.charAt(found + name.length()));
-			if (beforeValid && afterValid) {
+			if (beforeValid && afterValid)
 				return found;
-			}
 			found++;
 		}
 		return -1;
 	}
 
-	private SemanticTokens encodeDeltaTokens(List<Token> tokens) {
-		List<Integer> data = new ArrayList<>();
-		int prevLine = 0;
-		int prevChar = 0;
-		boolean first = true;
-		for (Token t : tokens) {
-			int deltaLine = first ? t.line : t.line - prevLine;
-			int deltaStart = first ? t.startChar : (deltaLine == 0 ? t.startChar - prevChar : t.startChar);
-			data.add(deltaLine);
-			data.add(deltaStart);
-			data.add(t.length);
-			data.add(t.type);
-			data.add(t.modifiers);
-
-			prevLine = t.line;
-			prevChar = t.startChar;
-			first = false;
-		}
-		return new SemanticTokens(data);
-	}
-
-	private int lineColToOffset(String text, int line, int col) {
+	private int lineColToOffset(final String text, final int line, final int col) {
 		if (line < 0)
 			return -1;
-		int curLine = 0;
-		int offset = 0;
-		int len = text.length();
+		int curLine = 0, offset = 0, len = text.length();
 		while (offset < len && curLine < line) {
-			if (text.charAt(offset) == '\n') {
+			if (text.charAt(offset) == '\n')
 				curLine++;
-			}
 			offset++;
 		}
 		if (curLine != line)
@@ -525,28 +479,32 @@ public class SemanticTokensProvider {
 		return Math.min(offset + col, len);
 	}
 
-	private static class Token {
-		final int line;
-		final int startChar;
-		final int length;
-		final int type;
-		final int modifiers;
+	private static record Token(int line, int startChar, int length, int type, int modifiers) {
+		static SemanticTokens encodeList(final List<Token> tokens) {
+			final var data = new ArrayList<Integer>();
+			int prevLine = 0, prevChar = 0;
+			var first = true;
+			for (final var t : tokens) {
+				final var deltaLine = first ? t.line : t.line - prevLine;
+				final var deltaStart = first ? t.startChar : (deltaLine == 0 ? t.startChar - prevChar : t.startChar);
+				data.add(deltaLine);
+				data.add(deltaStart);
+				data.add(t.length);
+				data.add(t.type);
+				data.add(t.modifiers);
 
-		Token(int line, int startChar, int length, int tokenType, int modifiers) {
-			this.line = line;
-			this.startChar = startChar;
-			this.length = length;
-			this.type = tokenType;
-			this.modifiers = modifiers;
+				prevLine = t.line;
+				prevChar = t.startChar;
+				first = false;
+			}
+			return new SemanticTokens(data);
 		}
 	}
 
-	private Position toLineCol(String text, int offset) {
-		int line = 0;
-		int col = 0;
-		int i = 0;
+	private Position toLineCol(final String text, final int offset) {
+		int line = 0, col = 0, i = 0;
 		while (i < offset) {
-			char c = text.charAt(i);
+			final var c = text.charAt(i);
 			if (c == '\n') {
 				line++;
 				col = 0;
