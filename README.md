@@ -1,4 +1,4 @@
-## Fork notice
+# groovyls
 
 This is a fork of [GroovyLanguageServer/groovy-language-server](/GroovyLanguageServer/groovy-language-server) that adds:
 
@@ -9,29 +9,6 @@ This is a fork of [GroovyLanguageServer/groovy-language-server](/GroovyLanguageS
 
 The goal is to make the developer experience as close to using [Eclipse JDT LS](https://github.com/eclipse-jdtls/eclipse.jdt.ls) as possible, which in turn improves the experience of Groovy development in VS Code.
 
-The original README continues below.
-
-# Groovy Language Server
-
-A [language server](https://microsoft.github.io/language-server-protocol/) for [Groovy](http://groovy-lang.org/). It is designed specifically for [Moonshine IDE](https://moonshine-ide.com), but it may work in other editors and environments.
-
-The following language server protocol requests are currently supported:
-
-- completion
-- definition
-- documentSymbol
-- hover
-- references
-- rename
-- signatureHelp
-- symbol
-- typeDefinition
-
-The following configuration options are supported:
-
-- groovy.java.home (`string` - sets a custom JDK path)
-- groovy.classpath (`string[]` - sets a custom classpath to include _.jar_ files)
-
 ## Build
 
 To build from the command line, run the following command:
@@ -40,7 +17,7 @@ To build from the command line, run the following command:
 ./gradlew build
 ```
 
-This will create _build/libs/groovyls-all.jar_.
+This will create `build/libs/groovyls-all.jar`.
 
 ## Run
 
@@ -54,8 +31,6 @@ Language server protocol messages are passed using standard I/O by default.
 
 ## Editors and IDEs
 
-A sample language extension for Visual Studio Code is available in the _vscode-extension_ directory. There are no plans to release this extension to the VSCode Marketplace.
+A sample language extension for Visual Studio Code is available in the [vscode-extension](./vscode-extension) directory.
 
-Instructions for setting up the language server in Sublime Text is available in the _sublime-text_ directory. Configuring the language server in other editors will likely be very similar.
-
-Moonshine IDE natively provides a Grails project type that automatically configures the language server.
+Instructions for setting up the language server in Sublime Text is available in the [sublime-text](./sublime-text) directory. Configuring the language server in other editors will likely be very similar.
