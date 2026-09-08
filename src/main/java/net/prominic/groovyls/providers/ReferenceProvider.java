@@ -22,12 +22,10 @@
 package net.prominic.groovyls.providers;
 
 import java.net.URI;
-import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
-import org.codehaus.groovy.ast.ASTNode;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -37,33 +35,34 @@ import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 
 public class ReferenceProvider {
-	private ASTNodeVisitor ast;
+	private final ASTNodeVisitor ast;
 
-	public ReferenceProvider(ASTNodeVisitor ast) {
+	public ReferenceProvider(final ASTNodeVisitor ast) {
 		this.ast = ast;
 	}
 
-	public CompletableFuture<List<? extends Location>> provideReferences(TextDocumentIdentifier textDocument,
-			Position position) {
-		if (ast == null) {
+	public CompletableFuture<List<? extends Location>> provideReferences(final TextDocumentIdentifier textDocument,
+			final Position position) {
+		if (ast == null)
 			// this shouldn't happen, but let's avoid an exception if something
 			// goes terribly wrong.
-			return CompletableFuture.completedFuture(Collections.emptyList());
-		}
-		URI documentURI = URI.create(textDocument.getUri());
-		ASTNode offsetNode = ast.getNodeAtLineAndColumn(documentURI, position.getLine(), position.getCharacter());
-		if (offsetNode == null) {
-			return CompletableFuture.completedFuture(Collections.emptyList());
-		}
+			return CompletableFuture.completedFuture(List.of());
 
-		List<ASTNode> references = GroovyASTUtils.getReferences(offsetNode, ast);
-		List<Location> locations = references.stream().map(node -> {
-			URI uri = ast.getURI(node);
-			if (uri == null)
-				return null;
-			return GroovyLanguageServerUtils.astNodeToLocation(node, uri);
-		}).filter(location -> location != null).collect(Collectors.toList());
+		final var documentURI = URI.create(textDocument.getUri());
+		final var offsetNode = ast.getNodeAtLineAndColumn(documentURI, position.getLine(), position.getCharacter());
 
-		return CompletableFuture.completedFuture(locations);
+		if (offsetNode == null)
+			return CompletableFuture.completedFuture(List.of());
+
+		final var references = GroovyASTUtils.getReferences(offsetNode, ast);
+
+		return CompletableFuture.completedFuture(references.stream()
+				.map(node -> {
+					if (!(ast.getURI(node) instanceof final URI uri))
+						return null;
+					return GroovyLanguageServerUtils.astNodeToLocation(node, uri);
+				})
+				.filter(Objects::nonNull)
+				.toList());
 	}
 }

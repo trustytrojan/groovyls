@@ -33,24 +33,20 @@ import java.util.stream.Collectors;
 
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.AnnotatedNode;
-import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.ImportNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.ModuleNode;
-import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.PropertyNode;
 import org.codehaus.groovy.ast.VariableScope;
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.Expression;
-import org.codehaus.groovy.ast.expr.FieldExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
-import org.codehaus.groovy.runtime.DefaultGroovyMethods;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
@@ -65,221 +61,198 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import io.github.classgraph.ClassInfo;
-import io.github.classgraph.PackageInfo;
 import io.github.classgraph.ScanResult;
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.compiler.util.GroovydocUtils;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
-import net.prominic.groovyls.util.GroovyNodeToStringUtils;
 
 public class CompletionProvider {
-	private ASTNodeVisitor ast;
-	private ScanResult classGraphScanResult;
-	private int maxItemCount = 1000;
+	private static final int MAX_ITEM_COUNT = 1000;
+
+	private final ASTNodeVisitor ast;
+	private final ScanResult classGraphScanResult;
+
 	private boolean isIncomplete = false;
 
-	public CompletionProvider(ASTNodeVisitor ast, ScanResult classGraphScanResult) {
+	public CompletionProvider(final ASTNodeVisitor ast, final ScanResult classGraphScanResult) {
 		this.ast = ast;
 		this.classGraphScanResult = classGraphScanResult;
 	}
 
 	public CompletableFuture<Either<List<CompletionItem>, CompletionList>> provideCompletion(
-			TextDocumentIdentifier textDocument, Position position, CompletionContext context) {
-		if (ast == null) {
+			final TextDocumentIdentifier textDocument, final Position position, final CompletionContext context) {
+		if (ast == null)
 			// this shouldn't happen, but let's avoid an exception if something
 			// goes terribly wrong.
 			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
-		}
-		URI uri = URI.create(textDocument.getUri());
-		ASTNode offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
-		if (offsetNode == null) {
-			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
-		}
-		ASTNode parentNode = ast.getParent(offsetNode);
-		
-		boolean isInNodeBlock = isInsideNodeBlock(offsetNode);
+
+		final var uri = URI.create(textDocument.getUri());
+		final var offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
+
+		if (offsetNode == null)
+			return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+
+		final var parentNode = ast.getParent(offsetNode);
+		final var isInNodeBlock = isInsideNodeBlock(offsetNode);
 
 		isIncomplete = false;
-		List<CompletionItem> items = new ArrayList<>();
+		final var items = new ArrayList<CompletionItem>();
 
-		if (offsetNode instanceof PropertyExpression) {
-			populateItemsFromPropertyExpression((PropertyExpression) offsetNode, position, items);
-		} else if (parentNode instanceof PropertyExpression) {
-			populateItemsFromPropertyExpression((PropertyExpression) parentNode, position, items);
-		} else if (offsetNode instanceof MethodCallExpression) {
-			populateItemsFromMethodCallExpression((MethodCallExpression) offsetNode, position, items);
-		} else if (offsetNode instanceof ConstructorCallExpression) {
-			populateItemsFromConstructorCallExpression((ConstructorCallExpression) offsetNode, position, items);
-		} else if (parentNode instanceof MethodCallExpression) {
-			populateItemsFromMethodCallExpression((MethodCallExpression) parentNode, position, items);
-		} else if (offsetNode instanceof VariableExpression) {
-			populateItemsFromVariableExpression((VariableExpression) offsetNode, position, items, isInNodeBlock);
-		} else if (offsetNode instanceof ImportNode) {
-			populateItemsFromImportNode((ImportNode) offsetNode, position, items);
-		} else if (offsetNode instanceof ClassNode) {
-			populateItemsFromClassNode((ClassNode) offsetNode, position, items);
+		if (offsetNode instanceof final PropertyExpression pe) {
+			populateItemsFromPropertyExpression(pe, position, items);
+		} else if (parentNode instanceof final PropertyExpression pe) {
+			populateItemsFromPropertyExpression(pe, position, items);
+		} else if (offsetNode instanceof final MethodCallExpression mce) {
+			populateItemsFromMethodCallExpression(mce, position, items);
+		} else if (offsetNode instanceof final ConstructorCallExpression cce) {
+			populateItemsFromConstructorCallExpression(cce, position, items);
+		} else if (parentNode instanceof final MethodCallExpression mce) {
+			populateItemsFromMethodCallExpression(mce, position, items);
+		} else if (offsetNode instanceof final VariableExpression ve) {
+			populateItemsFromVariableExpression(ve, position, items, isInNodeBlock);
+		} else if (offsetNode instanceof final ImportNode in) {
+			populateItemsFromImportNode(in, position, items);
+		} else if (offsetNode instanceof final ClassNode cn) {
+			populateItemsFromClassNode(cn, position, items);
 		} else if (offsetNode instanceof MethodNode) {
 			populateItemsFromScope(offsetNode, "", items, isInNodeBlock);
 		} else if (offsetNode instanceof Statement) {
 			populateItemsFromScope(offsetNode, "", items, isInNodeBlock);
 		}
 
-		if (isIncomplete) {
+		if (isIncomplete)
 			return CompletableFuture.completedFuture(Either.forRight(new CompletionList(true, items)));
-		}
+
 		return CompletableFuture.completedFuture(Either.forLeft(items));
 	}
 
-	private void populateItemsFromPropertyExpression(PropertyExpression propExpr, Position position,
-			List<CompletionItem> items) {
-		Range propertyRange = GroovyLanguageServerUtils.astNodeToRange(propExpr.getProperty());
-		if (propertyRange == null) {
+	private void populateItemsFromPropertyExpression(final PropertyExpression propExpr, final Position position,
+			final List<CompletionItem> items) {
+		if (!(GroovyLanguageServerUtils.astNodeToRange(propExpr.getProperty()) instanceof final Range propertyRange))
 			return;
-		}
-		String memberName = getMemberName(propExpr.getPropertyAsString(), propertyRange, position);
+		final var memberName = getMemberName(propExpr.getPropertyAsString(), propertyRange, position);
 		populateItemsFromExpression(propExpr.getObjectExpression(), memberName, items);
 	}
 
-	private void populateItemsFromMethodCallExpression(MethodCallExpression methodCallExpr, Position position,
-			List<CompletionItem> items) {
-		Range methodRange = GroovyLanguageServerUtils.astNodeToRange(methodCallExpr.getMethod());
-		if (methodRange == null) {
+	private void populateItemsFromMethodCallExpression(final MethodCallExpression methodCallExpr,
+			final Position position, final List<CompletionItem> items) {
+		if (!(GroovyLanguageServerUtils.astNodeToRange(methodCallExpr.getMethod()) instanceof final Range methodRange))
 			return;
-		}
-		String memberName = getMemberName(methodCallExpr.getMethodAsString(), methodRange, position);
+		final var memberName = getMemberName(methodCallExpr.getMethodAsString(), methodRange, position);
 		populateItemsFromExpression(methodCallExpr.getObjectExpression(), memberName, items);
 	}
 
-	private void populateItemsFromImportNode(ImportNode importNode, Position position, List<CompletionItem> items) {
-		Range importRange = GroovyLanguageServerUtils.astNodeToRange(importNode);
-		if (importRange == null) {
+	private void populateItemsFromImportNode(final ImportNode importNode, final Position position,
+			final List<CompletionItem> items) {
+		if (!(GroovyLanguageServerUtils.astNodeToRange(importNode) instanceof final Range importRange))
 			return;
-		}
 		// skip the "import " at the beginning
 		importRange.setStart(new Position(importRange.getEnd().getLine(),
 				importRange.getEnd().getCharacter() - importNode.getType().getName().length()));
-		String importText = getMemberName(importNode.getType().getName(), importRange, position);
+		final var importText = getMemberName(importNode.getType().getName(), importRange, position);
 
-		ModuleNode enclosingModule = (ModuleNode) GroovyASTUtils.getEnclosingNodeOfType(importNode, ModuleNode.class,
+		final var enclosingModule = (ModuleNode) GroovyASTUtils.getEnclosingNodeOfType(importNode, ModuleNode.class,
 				ast);
 
-		String enclosingPackageName = enclosingModule != null ? enclosingModule.getPackageName() : null;
-		List<String> importNames = enclosingModule != null ? enclosingModule.getImports().stream()
+		final var enclosingPackageName = enclosingModule != null ? enclosingModule.getPackageName() : null;
+		final var importNames = enclosingModule != null ? enclosingModule.getImports().stream()
 				.map(otherImportNode -> otherImportNode.getClassName()).collect(Collectors.toList())
 				: Collections.emptyList();
 
-		List<CompletionItem> localClassItems = ast.getClassNodes().stream().filter(classNode -> {
-			String packageName = classNode.getPackageName();
-			if (packageName == null || packageName.length() == 0 || packageName.equals(enclosingPackageName)) {
+		ast.getClassNodes().stream().filter(classNode -> {
+			final var packageName = classNode.getPackageName();
+			if (packageName == null || packageName.length() == 0 || packageName.equals(enclosingPackageName))
 				return false;
-			}
-			String className = classNode.getName();
-			String classNameWithoutPackage = classNode.getNameWithoutPackage();
-			if (!className.startsWith(importText) && !classNameWithoutPackage.startsWith(importText)) {
+			final var className = classNode.getName();
+			final var classNameWithoutPackage = classNode.getNameWithoutPackage();
+			if (!className.startsWith(importText) && !classNameWithoutPackage.startsWith(importText))
 				return false;
-			}
-			if (importNames.contains(className)) {
+			if (importNames.contains(className))
 				return false;
-			}
 			return true;
 		}).map(classNode -> {
-			CompletionItem item = new CompletionItem();
+			final var item = new CompletionItem();
 			item.setLabel(classNode.getName());
 			item.setTextEdit(Either.forLeft(new TextEdit(importRange, classNode.getName())));
 			item.setKind(GroovyLanguageServerUtils.astNodeToCompletionItemKind(classNode));
-			if (classNode.getNameWithoutPackage().startsWith(importText)) {
+			if (classNode.getNameWithoutPackage().startsWith(importText))
 				item.setSortText(classNode.getNameWithoutPackage());
-			}
-			String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(classNode.getGroovydoc());
-			if (markdownDocs != null) {
+			final var markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(classNode.getGroovydoc());
+			if (markdownDocs != null)
 				item.setDocumentation(new MarkupContent(MarkupKind.MARKDOWN, markdownDocs));
-			}
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(localClassItems);
+		}).forEach(items::add);
 
-		if (classGraphScanResult == null) {
+		if (classGraphScanResult == null)
 			return;
-		}
-		List<ClassInfo> classes = classGraphScanResult.getAllClasses();
-		List<PackageInfo> packages = classGraphScanResult.getPackageInfo();
+		final var classes = classGraphScanResult.getAllClasses();
+		final var packages = classGraphScanResult.getPackageInfo();
 
-		List<CompletionItem> packageItems = packages.stream().filter(packageInfo -> {
-			String packageName = packageInfo.getName();
-			if (packageName.startsWith(importText)) {
+		packages.stream().filter(packageInfo -> {
+			final var packageName = packageInfo.getName();
+			if (packageName.startsWith(importText))
 				return true;
-			}
 			return false;
 		}).map(packageInfo -> {
-			CompletionItem item = new CompletionItem();
+			final var item = new CompletionItem();
 			item.setLabel(packageInfo.getName());
 			item.setTextEdit(Either.forLeft(new TextEdit(importRange, packageInfo.getName())));
 			item.setKind(CompletionItemKind.Module);
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(packageItems);
+		}).forEach(items::add);
 
-		List<CompletionItem> classItems = classes.stream().filter(classInfo -> {
-			String packageName = classInfo.getPackageName();
-			if (packageName == null || packageName.length() == 0 || packageName.equals(enclosingPackageName)) {
+		classes.stream().filter(classInfo -> {
+			final var packageName = classInfo.getPackageName();
+			if (packageName == null || packageName.length() == 0 || packageName.equals(enclosingPackageName))
 				return false;
-			}
-			String className = classInfo.getName();
-			String classNameWithoutPackage = classInfo.getSimpleName();
-			if (!className.startsWith(importText) && !classNameWithoutPackage.startsWith(importText)) {
+			final var className = classInfo.getName();
+			final var classNameWithoutPackage = classInfo.getSimpleName();
+			if (!className.startsWith(importText) && !classNameWithoutPackage.startsWith(importText))
 				return false;
-			}
-			if (importNames.contains(className)) {
+			if (importNames.contains(className))
 				return false;
-			}
 			return true;
 		}).map(classInfo -> {
-			CompletionItem item = new CompletionItem();
+			final var item = new CompletionItem();
 			item.setLabel(classInfo.getName());
 			item.setTextEdit(Either.forLeft(new TextEdit(importRange, classInfo.getName())));
 			item.setKind(classInfoToCompletionItemKind(classInfo));
-			if (classInfo.getSimpleName().startsWith(importText)) {
+			if (classInfo.getSimpleName().startsWith(importText))
 				item.setSortText(classInfo.getSimpleName());
-			}
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(classItems);
+		}).forEach(items::add);
 	}
 
-	private void populateItemsFromClassNode(ClassNode classNode, Position position, List<CompletionItem> items) {
-		ASTNode parentNode = ast.getParent(classNode);
-		if (!(parentNode instanceof ClassNode)) {
+	private void populateItemsFromClassNode(final ClassNode classNode, final Position position,
+			final List<CompletionItem> items) {
+		final var parentNode = ast.getParent(classNode);
+
+		if (!(parentNode instanceof final ClassNode parentClassNode))
 			return;
-		}
-		ClassNode parentClassNode = (ClassNode) parentNode;
-		Range classRange = GroovyLanguageServerUtils.astNodeToRange(classNode);
-		if (classRange == null) {
+		if (!(GroovyLanguageServerUtils.astNodeToRange(classNode) instanceof final Range classRange))
 			return;
-		}
-		String className = getMemberName(classNode.getUnresolvedName(), classRange, position);
-		if (classNode.equals(parentClassNode.getUnresolvedSuperClass())) {
+
+		final var className = getMemberName(classNode.getUnresolvedName(), classRange, position);
+
+		if (classNode.equals(parentClassNode.getUnresolvedSuperClass()))
 			populateTypes(classNode, className, new HashSet<>(), true, false, false, items);
-		} else if (Arrays.asList(parentClassNode.getUnresolvedInterfaces()).contains(classNode)) {
+		else if (Arrays.asList(parentClassNode.getUnresolvedInterfaces()).contains(classNode))
 			populateTypes(classNode, className, new HashSet<>(), false, true, false, items);
-		}
 	}
 
-	private void populateItemsFromConstructorCallExpression(ConstructorCallExpression constructorCallExpr,
-			Position position, List<CompletionItem> items) {
-		Range typeRange = GroovyLanguageServerUtils.astNodeToRange(constructorCallExpr.getType());
-		if (typeRange == null) {
+	private void populateItemsFromConstructorCallExpression(final ConstructorCallExpression constructorCallExpr,
+			final Position position, final List<CompletionItem> items) {
+		if (!(GroovyLanguageServerUtils.astNodeToRange(constructorCallExpr.getType()) instanceof final Range typeRange))
 			return;
-		}
-		String typeName = getMemberName(constructorCallExpr.getType().getNameWithoutPackage(), typeRange, position);
+		final var typeName = getMemberName(constructorCallExpr.getType().getNameWithoutPackage(), typeRange, position);
 		populateTypes(constructorCallExpr, typeName, new HashSet<>(), true, false, false, items);
 	}
 
-	private boolean isInsideNodeBlock(ASTNode node) {
-		ASTNode current = node;
+	private boolean isInsideNodeBlock(final ASTNode node) {
+		var current = node;
 		while (current != null) {
-			if (current instanceof org.codehaus.groovy.ast.expr.MethodCallExpression) {
-				org.codehaus.groovy.ast.expr.MethodCallExpression call = (org.codehaus.groovy.ast.expr.MethodCallExpression) current;
+			if (current instanceof final MethodCallExpression call) {
 				if ("node".equals(call.getMethodAsString())) {
 					return true;
 				}
@@ -289,20 +262,18 @@ public class CompletionProvider {
 		return false;
 	}
 
-	private void populateItemsFromVariableExpression(VariableExpression varExpr, Position position,
-			List<CompletionItem> items, boolean isInNodeBlock) {
-		Range varRange = GroovyLanguageServerUtils.astNodeToRange(varExpr);
-		if (varRange == null) {
+	private void populateItemsFromVariableExpression(final VariableExpression varExpr, final Position position,
+			final List<CompletionItem> items, final boolean isInNodeBlock) {
+		if (!(GroovyLanguageServerUtils.astNodeToRange(varExpr) instanceof final Range varRange))
 			return;
-		}
-		String memberName = getMemberName(varExpr.getName(), varRange, position);
+		final var memberName = getMemberName(varExpr.getName(), varRange, position);
 		populateItemsFromScope(varExpr, memberName, items, isInNodeBlock);
 	}
 
-	private void populateItemsFromPropertiesAndFields(List<PropertyNode> properties, List<FieldNode> fields,
-			String memberNamePrefix, Set<String> existingNames, List<CompletionItem> items) {
-		List<CompletionItem> propItems = properties.stream().filter(property -> {
-			String name = property.getName();
+	private void populateItemsFromPropertiesAndFields(final List<PropertyNode> properties, final List<FieldNode> fields,
+			final String memberNamePrefix, final Set<String> existingNames, final List<CompletionItem> items) {
+		properties.stream().filter(property -> {
+			final var name = property.getName();
 			// sometimes, a property and a field will have the same name
 			if (name.startsWith(memberNamePrefix) && !existingNames.contains(name)) {
 				existingNames.add(name);
@@ -310,21 +281,20 @@ public class CompletionProvider {
 			}
 			return false;
 		}).map(property -> {
-			CompletionItem item = new CompletionItem();
+			final var item = new CompletionItem();
 			item.setLabel(property.getName());
 			item.setKind(GroovyLanguageServerUtils.astNodeToCompletionItemKind(property));
-			String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(property.getGroovydoc());
-			if (markdownDocs != null) {
+			final var markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(property.getGroovydoc());
+			if (markdownDocs != null)
 				item.setDocumentation(new MarkupContent(MarkupKind.MARKDOWN, markdownDocs));
-			}
-			CompletionItemLabelDetails labelDetails = new CompletionItemLabelDetails();
+			final var labelDetails = new CompletionItemLabelDetails();
 			labelDetails.setDescription(property.getType().getNameWithoutPackage());
 			item.setLabelDetails(labelDetails);
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(propItems);
-		List<CompletionItem> fieldItems = fields.stream().filter(field -> {
-			String name = field.getName();
+		}).forEach(items::add);
+
+		fields.stream().filter(field -> {
+			final var name = field.getName();
 			// sometimes, a property and a field will have the same name
 			if (name.startsWith(memberNamePrefix) && !existingNames.contains(name)) {
 				existingNames.add(name);
@@ -332,25 +302,24 @@ public class CompletionProvider {
 			}
 			return false;
 		}).map(field -> {
-			CompletionItem item = new CompletionItem();
+			final var item = new CompletionItem();
 			item.setLabel(field.getName());
 			item.setKind(GroovyLanguageServerUtils.astNodeToCompletionItemKind(field));
-			String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(field.getGroovydoc());
-			if (markdownDocs != null) {
+			final var markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(field.getGroovydoc());
+			if (markdownDocs != null)
 				item.setDocumentation(new MarkupContent(MarkupKind.MARKDOWN, markdownDocs));
-			}
-			CompletionItemLabelDetails labelDetails = new CompletionItemLabelDetails();
+			final var labelDetails = new CompletionItemLabelDetails();
 			labelDetails.setDescription(field.getType().getNameWithoutPackage());
 			item.setLabelDetails(labelDetails);
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(fieldItems);
+		}).forEach(items::add);
 	}
 
-	private void populateItemsFromMethods(List<MethodNode> methods, String memberNamePrefix, Set<String> existingNames,
-			List<CompletionItem> items) {
-		List<CompletionItem> methodItems = methods.stream().filter(method -> {
-			String methodName = method.getName();
+	private void populateItemsFromMethods(final List<MethodNode> methods, final String memberNamePrefix,
+			final Set<String> existingNames,
+			final List<CompletionItem> items) {
+		methods.stream().filter(method -> {
+			final var methodName = method.getName();
 			// overloads can cause duplicates
 			if (methodName.startsWith(memberNamePrefix) && !existingNames.contains(methodName)) {
 				existingNames.add(methodName);
@@ -358,48 +327,45 @@ public class CompletionProvider {
 			}
 			return false;
 		}).map(method -> {
-			CompletionItem item = new CompletionItem();
+			final var item = new CompletionItem();
 			item.setLabel(method.getName());
-			String methodParams = "(";
-			for (Parameter p : method.getParameters()) {
+			var methodParams = "(";
+			for (final var p : method.getParameters())
 				methodParams += p.getType().getNameWithoutPackage() + ' ' + p.getName() + ", ";
-			}
 			if (!methodParams.equals("("))
 				methodParams = methodParams.substring(0, methodParams.length() - 2);
 			methodParams += ')';
-			CompletionItemLabelDetails labelDetails = new CompletionItemLabelDetails();
+			final var labelDetails = new CompletionItemLabelDetails();
 			labelDetails.setDetail(methodParams);
-			String description = method.getReturnType().getNameWithoutPackage();
-			if (DefaultGroovyMethods.asBoolean(method.<Boolean>getNodeMetaData("dgm")))
+			var description = method.getReturnType().getNameWithoutPackage();
+			if (method.getNodeMetaData("dgm") != null)
 				description += " (DGM)";
 			labelDetails.setDescription(description);
 			item.setLabelDetails(labelDetails);
 			item.setKind(GroovyLanguageServerUtils.astNodeToCompletionItemKind(method));
-			String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(method.getGroovydoc());
-			if (markdownDocs != null) {
+			final var markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(method.getGroovydoc());
+			if (markdownDocs != null)
 				item.setDocumentation(new MarkupContent(MarkupKind.MARKDOWN, markdownDocs));
-			}
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(methodItems);
+		}).forEach(items::add);
 	}
 
-	private void populateItemsFromExpression(Expression leftSide, String memberNamePrefix, List<CompletionItem> items) {
-		Set<String> existingNames = new HashSet<>();
+	private void populateItemsFromExpression(final Expression leftSide, final String memberNamePrefix,
+			final List<CompletionItem> items) {
+		final var existingNames = new HashSet<String>();
 
-		List<PropertyNode> properties = GroovyASTUtils.getPropertiesForLeftSideOfPropertyExpression(leftSide, ast);
-		List<FieldNode> fields = GroovyASTUtils.getFieldsForLeftSideOfPropertyExpression(leftSide, ast);
+		final var properties = GroovyASTUtils.getPropertiesForLeftSideOfPropertyExpression(leftSide, ast);
+		final var fields = GroovyASTUtils.getFieldsForLeftSideOfPropertyExpression(leftSide, ast);
 		populateItemsFromPropertiesAndFields(properties, fields, memberNamePrefix, existingNames, items);
 
-		List<MethodNode> methods = GroovyASTUtils.getMethodsForLeftSideOfPropertyExpression(leftSide, ast);
+		final var methods = GroovyASTUtils.getMethodsForLeftSideOfPropertyExpression(leftSide, ast);
 		populateItemsFromMethods(methods, memberNamePrefix, existingNames, items);
 	}
 
-	private void populateItemsFromVariableScope(VariableScope variableScope, String memberNamePrefix,
-			Set<String> existingNames, List<CompletionItem> items) {
-		List<CompletionItem> variableItems = variableScope.getDeclaredVariables().values().stream().filter(variable -> {
-
-			String variableName = variable.getName();
+	private void populateItemsFromVariableScope(final VariableScope variableScope, final String memberNamePrefix,
+			final Set<String> existingNames, final List<CompletionItem> items) {
+		variableScope.getDeclaredVariables().values().stream().filter(variable -> {
+			final var variableName = variable.getName();
 			// overloads can cause duplicates
 			if (variableName.startsWith(memberNamePrefix) && !existingNames.contains(variableName)) {
 				existingNames.add(variableName);
@@ -407,172 +373,154 @@ public class CompletionProvider {
 			}
 			return false;
 		}).map(variable -> {
-			CompletionItem item = new CompletionItem();
+			final var item = new CompletionItem();
 			item.setLabel(variable.getName());
 			item.setKind(GroovyLanguageServerUtils.astNodeToCompletionItemKind((ASTNode) variable));
-			CompletionItemLabelDetails labelDetails = new CompletionItemLabelDetails();
+			final var labelDetails = new CompletionItemLabelDetails();
 			labelDetails.setDescription(variable.getType().getNameWithoutPackage());
 			item.setLabelDetails(labelDetails);
-			if (variable instanceof AnnotatedNode) {
-				AnnotatedNode annotatedVar = (AnnotatedNode) variable;
-				String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(annotatedVar.getGroovydoc());
-				if (markdownDocs != null) {
+			if (variable instanceof final AnnotatedNode annotatedVar) {
+				final var markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(annotatedVar.getGroovydoc());
+				if (markdownDocs != null)
 					item.setDocumentation(new MarkupContent(MarkupKind.MARKDOWN, markdownDocs));
-				}
 			}
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(variableItems);
+		}).forEach(items::add);
 	}
 
-	private void populateItemsFromScope(ASTNode node, String namePrefix, List<CompletionItem> items, boolean isInNodeBlock) {
-		Set<String> existingNames = new HashSet<>();
-		ASTNode current = node;
+	private void populateItemsFromScope(final ASTNode node, final String namePrefix, final List<CompletionItem> items,
+			final boolean isInNodeBlock) {
+		final var existingNames = new HashSet<String>();
+		var current = node;
 		while (current != null) {
-			if (current instanceof ClassNode) {
-				ClassNode classNode = (ClassNode) current;
-				populateItemsFromPropertiesAndFields(classNode.getProperties(), classNode.getFields(), namePrefix,
+			if (current instanceof final ClassNode cn) {
+				populateItemsFromPropertiesAndFields(cn.getProperties(), cn.getFields(), namePrefix,
 						existingNames, items);
-				populateItemsFromMethods(classNode.getMethods(), namePrefix, existingNames, items);
-			} else if (current instanceof MethodNode) {
-				MethodNode methodNode = (MethodNode) current;
-				populateItemsFromVariableScope(methodNode.getVariableScope(), namePrefix, existingNames, items);
-			} else if (current instanceof BlockStatement) {
-				BlockStatement block = (BlockStatement) current;
-				populateItemsFromVariableScope(block.getVariableScope(), namePrefix, existingNames, items);
+				populateItemsFromMethods(cn.getMethods(), namePrefix, existingNames, items);
+			} else if (current instanceof final MethodNode mn) {
+				populateItemsFromVariableScope(mn.getVariableScope(), namePrefix, existingNames, items);
+			} else if (current instanceof final BlockStatement bs) {
+				populateItemsFromVariableScope(bs.getVariableScope(), namePrefix, existingNames, items);
 			}
 			current = ast.getParent(current);
 		}
-		
+
 		// GDSL symbols are now injected as methods into ClassNodes and will be
 		// included through the normal method completion path above
-		
+
 		populateTypes(node, namePrefix, existingNames, items);
 	}
 
-	private void populateTypes(ASTNode offsetNode, String namePrefix, Set<String> existingNames,
-			List<CompletionItem> items) {
+	private void populateTypes(final ASTNode offsetNode, final String namePrefix, final Set<String> existingNames,
+			final List<CompletionItem> items) {
 		populateTypes(offsetNode, namePrefix, existingNames, true, true, true, items);
 	}
 
-	private void populateTypes(ASTNode offsetNode, String namePrefix, Set<String> existingNames, boolean includeClasses,
-			boolean includeInterfaces, boolean includeEnums, List<CompletionItem> items) {
-		Range addImportRange = GroovyASTUtils.findAddImportRange(offsetNode, ast);
+	private void populateTypes(final ASTNode offsetNode, final String namePrefix, final Set<String> existingNames,
+			final boolean includeClasses, final boolean includeInterfaces, final boolean includeEnums,
+			final List<CompletionItem> items) {
+		final var addImportRange = GroovyASTUtils.findAddImportRange(offsetNode, ast);
 
-		ModuleNode enclosingModule = (ModuleNode) GroovyASTUtils.getEnclosingNodeOfType(offsetNode, ModuleNode.class,
+		final var enclosingModule = (ModuleNode) GroovyASTUtils.getEnclosingNodeOfType(offsetNode, ModuleNode.class,
 				ast);
-		String enclosingPackageName = enclosingModule != null ? enclosingModule.getPackageName() : null;
-		List<String> importNames = enclosingModule != null
+		final var enclosingPackageName = enclosingModule != null ? enclosingModule.getPackageName() : null;
+		final var importNames = enclosingModule != null
 				? enclosingModule.getImports().stream().map(importNode -> importNode.getClassName())
 						.collect(Collectors.toList())
 				: Collections.emptyList();
 
-		List<CompletionItem> localClassItems = ast.getClassNodes().stream().filter(classNode -> {
-			if (isIncomplete) {
+		ast.getClassNodes().stream().filter(classNode -> {
+			if (isIncomplete)
 				return false;
-			}
-			if (existingNames.size() >= maxItemCount) {
+			if (existingNames.size() >= MAX_ITEM_COUNT) {
 				isIncomplete = true;
 				return false;
 			}
-			String classNameWithoutPackage = classNode.getNameWithoutPackage();
-			String className = classNode.getName();
+			final var classNameWithoutPackage = classNode.getNameWithoutPackage();
+			final var className = classNode.getName();
 			if (classNameWithoutPackage.startsWith(namePrefix) && !existingNames.contains(className)) {
 				existingNames.add(className);
 				return true;
 			}
 			return false;
 		}).map(classNode -> {
-			String className = classNode.getName();
-			String packageName = classNode.getPackageName();
-			CompletionItem item = new CompletionItem();
+			final var className = classNode.getName();
+			final var packageName = classNode.getPackageName();
+			final var item = new CompletionItem();
 			item.setLabel(classNode.getNameWithoutPackage());
 			item.setKind(GroovyLanguageServerUtils.astNodeToCompletionItemKind(classNode));
-			CompletionItemLabelDetails labelDetails = new CompletionItemLabelDetails();
+			final var labelDetails = new CompletionItemLabelDetails();
 			labelDetails.setDescription(packageName);
 			item.setLabelDetails(labelDetails);
-			String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(classNode.getGroovydoc());
-			if (markdownDocs != null) {
+			final var markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(classNode.getGroovydoc());
+			if (markdownDocs != null)
 				item.setDocumentation(new MarkupContent(MarkupKind.MARKDOWN, markdownDocs));
-			}
 			if (packageName != null && !packageName.equals(enclosingPackageName) && !importNames.contains(className)) {
-				List<TextEdit> additionalTextEdits = new ArrayList<>();
-				TextEdit addImportEdit = createAddImportTextEdit(className, addImportRange);
+				final var additionalTextEdits = new ArrayList<TextEdit>();
+				final var addImportEdit = createAddImportTextEdit(className, addImportRange);
 				additionalTextEdits.add(addImportEdit);
 				item.setAdditionalTextEdits(additionalTextEdits);
 			}
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(localClassItems);
+		}).forEach(items::add);
 
-		if (classGraphScanResult == null) {
+		if (classGraphScanResult == null)
 			return;
-		}
-		List<ClassInfo> classes = classGraphScanResult.getAllClasses();
 
-		List<CompletionItem> classItems = classes.stream().filter(classInfo -> {
-			if (isIncomplete) {
+		classGraphScanResult.getAllClasses().stream().filter(classInfo -> {
+			if (isIncomplete)
 				return false;
-			}
-			if (existingNames.size() >= maxItemCount) {
+			if (existingNames.size() >= MAX_ITEM_COUNT) {
 				isIncomplete = true;
 				return false;
 			}
-			String className = classInfo.getName();
-			String classNameWithoutPackage = classInfo.getSimpleName();
+			final var className = classInfo.getName();
+			final var classNameWithoutPackage = classInfo.getSimpleName();
 			if (classNameWithoutPackage.startsWith(namePrefix) && !existingNames.contains(className)) {
 				existingNames.add(className);
 				return true;
 			}
 			return false;
 		}).map(classInfo -> {
-			String className = classInfo.getName();
-			String packageName = classInfo.getPackageName();
-			CompletionItem item = new CompletionItem();
+			final var className = classInfo.getName();
+			final var packageName = classInfo.getPackageName();
+			final var item = new CompletionItem();
 			item.setLabel(classInfo.getSimpleName());
 			item.setKind(classInfoToCompletionItemKind(classInfo));
-			CompletionItemLabelDetails labelDetails = new CompletionItemLabelDetails();
+			final var labelDetails = new CompletionItemLabelDetails();
 			labelDetails.setDescription(packageName);
 			item.setLabelDetails(labelDetails);
 			if (packageName != null && !packageName.equals(enclosingPackageName) && !importNames.contains(className)) {
-				List<TextEdit> additionalTextEdits = new ArrayList<>();
-				TextEdit addImportEdit = createAddImportTextEdit(className, addImportRange);
+				final var additionalTextEdits = new ArrayList<TextEdit>();
+				final var addImportEdit = createAddImportTextEdit(className, addImportRange);
 				additionalTextEdits.add(addImportEdit);
 				item.setAdditionalTextEdits(additionalTextEdits);
 			}
 			return item;
-		}).collect(Collectors.toList());
-		items.addAll(classItems);
+		}).forEach(items::add);
 	}
 
-	private String getMemberName(String memberName, Range range, Position position) {
+	private String getMemberName(final String memberName, final Range range, final Position position) {
 		if (position.getLine() == range.getStart().getLine()
 				&& position.getCharacter() > range.getStart().getCharacter()) {
-			int length = position.getCharacter() - range.getStart().getCharacter();
-			if (length > 0 && length <= memberName.length()) {
+			final var length = position.getCharacter() - range.getStart().getCharacter();
+			if (length > 0 && length <= memberName.length())
 				return memberName.substring(0, length).trim();
-			}
 		}
 		return "";
 	}
 
-	private CompletionItemKind classInfoToCompletionItemKind(ClassInfo classInfo) {
-		if (classInfo.isInterface()) {
+	private CompletionItemKind classInfoToCompletionItemKind(final ClassInfo classInfo) {
+		if (classInfo.isInterface())
 			return CompletionItemKind.Interface;
-		}
-		if (classInfo.isEnum()) {
+		if (classInfo.isEnum())
 			return CompletionItemKind.Enum;
-		}
 		return CompletionItemKind.Class;
 	}
 
-	private TextEdit createAddImportTextEdit(String className, Range range) {
-		TextEdit edit = new TextEdit();
-		StringBuilder builder = new StringBuilder();
-		builder.append("import ");
-		builder.append(className);
-		builder.append("\n");
-		edit.setNewText(builder.toString());
+	private TextEdit createAddImportTextEdit(final String className, final Range range) {
+		final var edit = new TextEdit();
+		edit.setNewText("import %s\n".formatted(className));
 		edit.setRange(range);
 		return edit;
 	}

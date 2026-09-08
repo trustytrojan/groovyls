@@ -141,6 +141,15 @@ public class GroovyLanguageServerUtils {
 		return new Location(uri.toString(), range);
 	}
 
+	public static SymbolInformation astNodeToSymbolInformation(ASTNode node, URI uri, String parentName) {
+		return switch (node) {
+			case final ClassNode cn -> astNodeToSymbolInformation(cn, uri, parentName);
+			case final MethodNode mn -> astNodeToSymbolInformation(mn, uri, parentName);
+			case final Variable v -> astNodeToSymbolInformation(v, uri, parentName);
+			default -> null;
+		};
+	}
+
 	public static SymbolInformation astNodeToSymbolInformation(ClassNode node, URI uri, String parentName) {
 		Location location = astNodeToLocation(node, uri);
 		if (location == null) {

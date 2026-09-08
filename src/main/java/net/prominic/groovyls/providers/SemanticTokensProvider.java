@@ -451,7 +451,7 @@ public class SemanticTokensProvider {
 				getModifiersOfMethod(mn)));
 	}
 
-	private String getDeclarationName(ASTNode node) {
+	public static String getDeclarationName(ASTNode node) {
 		if (node instanceof MethodNode)
 			return ((MethodNode) node).getName();
 		if (node instanceof Variable)
