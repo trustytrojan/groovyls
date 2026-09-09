@@ -59,7 +59,9 @@ public class DocumentSymbolProvider {
 						return GroovyLanguageServerUtils.astNodeToSymbolInformation(cn, uri, null);
 					final var enclosingClass = (ClassNode) GroovyASTUtils.getEnclosingNodeOfType(node, ClassNode.class,
 							ast);
-					return GroovyLanguageServerUtils.astNodeToSymbolInformation(node, uri, enclosingClass.getName());
+					return (enclosingClass != null)
+							? GroovyLanguageServerUtils.astNodeToSymbolInformation(node, uri, enclosingClass.getName())
+							: null;
 				})
 				.filter(Objects::nonNull)
 				.map(Either::<SymbolInformation, DocumentSymbol>forLeft)

@@ -241,4 +241,166 @@ public class StaticTypeCheckingTests {
 		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
 		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "Object A.call()");
 	}
+
+	@Test
+	void testGroovyMOPMethods_getProperty() throws Exception {
+		openTextDocument("""
+				class A {
+					int getProperty(String name) {}
+				}
+				def obj = new A()
+				obj.thing
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "int A.getProperty(String name)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "int A.getProperty(String name)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_setProperty() throws Exception {
+		openTextDocument("""
+				class A {
+					void setProperty(String name, Object value) {}
+				}
+				def obj = new A()
+				obj.thing = 3
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "void A.setProperty(String name, Object value)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "void A.setProperty(String name, Object value)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_setProperty_derivedParameterType() throws Exception {
+		openTextDocument("""
+				class A {
+					void setProperty(String name, int value) {}
+				}
+				def obj = new A()
+				obj.thing = 3
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "void A.setProperty(String name, int value)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "void A.setProperty(String name, int value)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_get() throws Exception {
+		openTextDocument("""
+				class A {
+					int get(String name) {}
+				}
+				def obj = new A()
+				obj.thing
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "int A.get(String name)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "int A.get(String name)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_set() throws Exception {
+		openTextDocument("""
+				class A {
+					void set(String name, Object value) {}
+				}
+				def obj = new A()
+				obj.thing = 3
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "void A.set(String name, Object value)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "void A.set(String name, Object value)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_set_derivedParameterType() throws Exception {
+		openTextDocument("""
+				class A {
+					void set(String name, int value) {}
+				}
+				def obj = new A()
+				obj.thing = 3
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "void A.set(String name, int value)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "void A.set(String name, int value)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_propertyMissingGetter() throws Exception {
+		openTextDocument("""
+				class A {
+					int propertyMissing(String name) {}
+				}
+				def obj = new A()
+				obj.thing
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "int A.propertyMissing(String name)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "int A.propertyMissing(String name)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_propertyMissingSetter() throws Exception {
+		openTextDocument("""
+				class A {
+					void propertyMissing(String name, Object value) {}
+				}
+				def obj = new A()
+				obj.thing = 3
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "void A.propertyMissing(String name, Object value)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "void A.propertyMissing(String name, Object value)");
+	}
+
+	@Test
+	void testGroovyMOPMethods_propertyMissingSetter_derivedParameterType() throws Exception {
+		openTextDocument("""
+				class A {
+					void propertyMissing(String name, int value) {}
+				}
+				def obj = new A()
+				obj.thing = 3
+				""");
+
+		Assertions.assertEquals(getHoverContentAtPosition(0, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "void A.propertyMissing(String name, int value)");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
+		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "void A.propertyMissing(String name, int value)");
+	}
 }

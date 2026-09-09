@@ -19,40 +19,38 @@
 ////////////////////////////////////////////////////////////////////////////////
 package net.prominic.groovyls.providers;
 
-import java.lang.reflect.Modifier;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.SemanticTokens;
-import org.eclipse.lsp4j.TextDocumentIdentifier;
-
-import net.prominic.groovyls.util.FileContentsTracker;
-import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.ClassHelper;
-import org.codehaus.groovy.ast.MethodNode;
-import org.codehaus.groovy.ast.Variable;
+import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.ImportNode;
-import org.codehaus.groovy.ast.PropertyNode;
+import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
-import org.codehaus.groovy.ast.expr.PropertyExpression;
-import org.codehaus.groovy.ast.expr.VariableExpression;
-import org.codehaus.groovy.transform.stc.StaticTypesMarker;
-import org.codehaus.groovy.ast.ClassNode;
-
-import net.prominic.groovyls.compiler.util.GroovyASTUtils;
-
+import org.codehaus.groovy.ast.PropertyNode;
+import org.codehaus.groovy.ast.Variable;
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.DeclarationExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.GStringExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
+import org.codehaus.groovy.ast.expr.PropertyExpression;
+import org.codehaus.groovy.ast.expr.VariableExpression;
+import org.codehaus.groovy.transform.stc.StaticTypesMarker;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.SemanticTokens;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
+
+import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
+import net.prominic.groovyls.compiler.ast.MySTCVisitor;
+import net.prominic.groovyls.compiler.util.GroovyASTUtils;
+import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 import net.prominic.lsp.utils.Ranges;
 
@@ -167,6 +165,10 @@ public class SemanticTokensProvider {
 			System.err.printf("  direct_method_call_target: %s\n", mn);
 		}
 
+		if (expr.getNodeMetaData(StaticTypesMarker.READONLY_PROPERTY) instanceof final Boolean b) {
+			System.err.printf("  readonly_property: %s\n", b);
+		}
+
 		if (expr instanceof final Expression e) {
 			System.err.printf("  type: %s\n", e.getType());
 		} else if (expr instanceof final Variable v) {
@@ -184,7 +186,7 @@ public class SemanticTokensProvider {
 		if (expr instanceof final Variable v) {
 			System.err.printf("  initial_expression: %s\n  is_final: %s\n  is_dynamic_typed: %s\n",
 					v.getInitialExpression(),
-					Modifier.isFinal(v.getModifiers()),
+					v.isFinal(),
 					v.isDynamicTyped());
 		}
 
@@ -213,7 +215,7 @@ public class SemanticTokensProvider {
 
 		// System.err.println("--- Start of text document: " + uri);
 		for (final var node : astVisitor.getNodes(uri)) {
-			// debugPrint(node, text);
+			// debugPrint(node, currentDocumentText);
 
 			if (node instanceof final ConstructorCallExpression cce) {
 				final var type = cce.getType();
@@ -252,13 +254,10 @@ public class SemanticTokensProvider {
 		// Properly color in a callable object as a method if it is being called
 		// directly in the source code.
 		final var typeOfNode = GroovyASTUtils.getTypeOfNode(mce.getObjectExpression(), astVisitor);
-		final var hasCallMethod = (typeOfNode != null)
-				? typeOfNode.hasPossibleMethod("call", mce.getArguments())
-				: false;
+		final var hasCallMethod = (typeOfNode != null) && typeOfNode.hasPossibleMethod("call", mce.getArguments());
 		final var callRange = GroovyLanguageServerUtils.astNodeToRange(mce);
 		final var notExplicitCallMethodCall = (callRange != null)
-				? Ranges.getSubstring(currentDocumentText, callRange).matches(".*\\.\\s*call\\s*\\(.*")
-				: false;
+				&& !Ranges.getSubstring(currentDocumentText, callRange).matches(".*\\.\\s*call\\s*\\(.*");
 
 		final var callableObject = hasCallMethod && notExplicitCallMethodCall;
 
@@ -303,7 +302,8 @@ public class SemanticTokensProvider {
 				if (v.isFinal())
 					modifiers.add(SemanticTokenModifiers.READONLY);
 			}
-			default -> {}
+			default -> {
+			}
 		}
 		return SemanticTokenModifiers.bitset(modifiers.toArray(SemanticTokenModifiers[]::new));
 	}
@@ -333,35 +333,47 @@ public class SemanticTokensProvider {
 			}
 		}
 
+		if (pe.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode methodNode) {
+			var modifiers = 0;
+
+			final var declaringClass = methodNode.getDeclaringClass();
+
+			// GroovyObject subclasses always have both a getProperty() and setProperty().
+			if (!declaringClass.isDerivedFromGroovyObject()) {
+				final var methodName = methodNode.getName();
+				if (methodName.startsWith("get")) {
+					// We need to see if there is a setter with the same name that takes 1 argument.
+
+					final var valueType = methodNode.getReturnType();
+					var params = new Parameter[] { new Parameter(valueType, "") };
+					var setter = declaringClass.getDeclaredMethod(methodName.replaceFirst("get", "set"), params);
+
+					// Try the Groovy MOP methods: "set", "setProperty", and "propertyMissing"
+					if (setter == null) {
+						params = new Parameter[] { new Parameter(ClassHelper.STRING_TYPE, ""),
+								new Parameter(ClassHelper.OBJECT_TYPE, "") };
+						setter = MySTCVisitor.getMostDerivedMethod(declaringClass, "set", params);
+					}
+
+					if (setter == null)
+						setter = MySTCVisitor.getMostDerivedMethod(declaringClass, "setProperty", params);
+
+					if (setter == null)
+						setter = MySTCVisitor.getMostDerivedMethod(declaringClass, "propertyMissing", params);
+
+					if (setter == null)
+						// No setter: the property can be considered "readonly".
+						modifiers = SemanticTokenModifiers.bitset(SemanticTokenModifiers.READONLY);
+				}
+			}
+
+			tokens.add(new Token(lineno, charno, propName.length(), SemanticTokenTypes.PROPERTY.ordinal(), modifiers));
+		}
+
 		// Use these utility functions because they also take into account member
 		// visibility.
 		final var fieldNode = GroovyASTUtils.getFieldFromExpression(pe, astVisitor);
 		final var propertyNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
-
-		if (fieldNode == null && propertyNode == null) {
-			final var methodNode = pe.<MethodNode>getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET);
-
-			if (methodNode == null)
-				// The STC **should** always fill in the method for PropertyExpressions
-				// that match getters/setters.
-				return;
-
-			var modifiers = 0;
-
-			final var methodName = methodNode.getName();
-			if (methodName.startsWith("get")) {
-				// We need to see if there is a setter with the same name that takes 1 argument.
-				final var setter = methodNode.getDeclaringClass().getDeclaredMethod(
-						methodName.replaceFirst("get", "set"),
-						new Parameter[] { new Parameter(methodNode.getReturnType(), null) });
-				if (setter == null)
-					// If not, then the property can be considered "readonly".
-					modifiers = SemanticTokenModifiers.bitset(SemanticTokenModifiers.READONLY);
-			}
-
-			tokens.add(new Token(lineno, charno, propName.length(), SemanticTokenTypes.PROPERTY.ordinal(), modifiers));
-			return;
-		}
 
 		var modifiers = 0;
 		if (fieldNode != null)
