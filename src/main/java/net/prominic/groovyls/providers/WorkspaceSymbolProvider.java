@@ -52,9 +52,10 @@ public class WorkspaceSymbolProvider {
 		final var nodes = ast.getNodes();
 
 		final var symbols = nodes.stream()
-				.filter(node -> SemanticTokensProvider.getDeclarationName(node) instanceof final String name
-						&& name.toLowerCase().contains(lowerCaseQuery))
-				.map(node -> {
+				.filter(node -> {
+					final var name = SemanticTokensProvider.getDeclarationName(node);
+					return name != null && name.toLowerCase().contains(lowerCaseQuery);
+				}).map(node -> {
 					final var uri = ast.getURI(node);
 					if (node instanceof final ClassNode cn)
 						return GroovyLanguageServerUtils.astNodeToSymbolInformation(cn, uri, null);

@@ -63,10 +63,12 @@ public class HoverProvider {
 			return CompletableFuture.completedFuture(null);
 		}
 
-		final ClassNode inferredType = (offsetNode instanceof final ConstantExpression ce
-				&& GroovyASTUtils.getPropertyOrMethodCallFromConstantExpression(ce, ast) instanceof final ASTNode an)
-						? an.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE)
-						: null;
+		final var propOrCallExpr = (offsetNode instanceof final ConstantExpression ce)
+				? GroovyASTUtils.getPropertyOrMethodCallFromConstantExpression(ce, ast)
+				: null;
+		final var inferredType = (propOrCallExpr != null)
+				? propOrCallExpr.<ClassNode>getNodeMetaData(StaticTypesMarker.INFERRED_TYPE)
+				: null;
 
 		// SemanticTokensProvider.debugPrint(offsetNode, null);
 

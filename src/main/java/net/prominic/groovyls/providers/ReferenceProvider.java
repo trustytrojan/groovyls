@@ -58,9 +58,8 @@ public class ReferenceProvider {
 
 		return CompletableFuture.completedFuture(references.stream()
 				.map(node -> {
-					if (!(ast.getURI(node) instanceof final URI uri))
-						return null;
-					return GroovyLanguageServerUtils.astNodeToLocation(node, uri);
+					final var uri = ast.getURI(node);
+					return (uri != null) ? GroovyLanguageServerUtils.astNodeToLocation(node, uri) : null;
 				})
 				.filter(Objects::nonNull)
 				.toList());

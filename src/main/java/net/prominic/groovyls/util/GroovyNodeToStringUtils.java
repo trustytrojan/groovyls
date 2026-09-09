@@ -110,10 +110,10 @@ public class GroovyNodeToStringUtils {
 			// (the first one in particular, which is chosen as the "compileTimeClassNode")
 			// are NOT generic types.
 			final var upper = lub.getSuperClass();
-			cn = (ClassHelper.isObjectType(upper) && lub.getInterfaces() instanceof final ClassNode[] interfaces
-					&& interfaces.length > 0)
-							? interfaces[0]
-							: upper;
+			final var interfaces = lub.getInterfaces();
+			cn = (ClassHelper.isObjectType(upper) && interfaces != null && interfaces.length > 0)
+					? interfaces[0]
+					: upper;
 		}
 		return "%s %s".formatted(prettyPrintTypeWithoutPackage(cn), v.getName());
 	}

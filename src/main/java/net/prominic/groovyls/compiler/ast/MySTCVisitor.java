@@ -55,13 +55,16 @@ public class MySTCVisitor extends StaticTypeCheckingVisitor {
 
 		// System.out.printf("MySTCVisitor.storeType: ve=%s cn=%s\n", ve, cn);
 
-		if (ve.getAccessedVariable() == ve && getInferredType(ve) instanceof final ClassNode existingInferredType) {
-			// This VariableExpression is the **original** object created by a
-			// DeclarationExpression, and it ALREADY has an inferred type.
-			super.storeType(exp, cn);
-			if (ve.getNodeMetaData("groovyls-original-inferred-type") == null)
-				ve.setNodeMetaData("groovyls-original-inferred-type", existingInferredType);
-			return;
+		if (ve.getAccessedVariable() == ve) {
+			final var existingInferredType = getInferredType(ve);
+			if (existingInferredType != null) {
+				// This VariableExpression is the **original** object created by a
+				// DeclarationExpression, and it ALREADY has an inferred type.
+				super.storeType(exp, cn);
+				if (ve.getNodeMetaData("groovyls-original-inferred-type") == null)
+					ve.setNodeMetaData("groovyls-original-inferred-type", existingInferredType);
+				return;
+			}
 		}
 
 		final var accessedVariable = ve.getAccessedVariable();

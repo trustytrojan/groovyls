@@ -192,8 +192,10 @@ public class SemanticTokensProvider {
 			System.err.printf("  return_type: %s\n", me.getReturnType());
 		}
 
-		if (text != null && GroovyLanguageServerUtils.astNodeToRange(expr) instanceof final Range r) {
-			System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(text, r));
+		if (text != null) {
+			final var r = GroovyLanguageServerUtils.astNodeToRange(expr);
+			if (r != null)
+				System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(text, r));
 		}
 	}
 
@@ -221,8 +223,10 @@ public class SemanticTokensProvider {
 				if (r == null)
 					continue;
 				tokens.add(makeTokenFromRange(r, SemanticTokenTypes.METHOD.ordinal(), 0));
-			} else if (node instanceof final DeclarationExpression de
-					&& de.getVariableExpression() instanceof final VariableExpression ve) {
+			} else if (node instanceof final DeclarationExpression de) {
+				final var ve = de.getVariableExpression();
+				if (ve == null)
+					continue;
 				final var r = GroovyLanguageServerUtils.astNodeToRange(ve.getOriginType());
 				if (r == null)
 					continue;
@@ -317,14 +321,16 @@ public class SemanticTokensProvider {
 		final var lineno = propRange.getStart().getLine();
 		var charno = propRange.getStart().getCharacter();
 
-		if (astVisitor.getParent(pe) instanceof final GStringExpression gse
-				&& GroovyLanguageServerUtils.astNodeToRange(gse) instanceof final Range r) {
-			final var sourceText = Ranges.getSubstring(currentDocumentText, r);
-			if (sourceText.contains('$' + pe.getText()))
-				// This PropertyExpression is inside a GStringExpression like this:
-				// "value: $obj.value". The PropertyExpression's range starts at the '$' but
-				// does not count it as length...
-				++charno;
+		if (astVisitor.getParent(pe) instanceof final GStringExpression gse) {
+			final var r = GroovyLanguageServerUtils.astNodeToRange(gse);
+			if (r != null) {
+				final var sourceText = Ranges.getSubstring(currentDocumentText, r);
+				if (sourceText.contains('$' + pe.getText()))
+					// This PropertyExpression is inside a GStringExpression like this:
+					// "value: $obj.value". The PropertyExpression's range starts at the '$' but
+					// does not count it as length...
+					++charno;
+			}
 		}
 
 		// Use these utility functions because they also take into account member

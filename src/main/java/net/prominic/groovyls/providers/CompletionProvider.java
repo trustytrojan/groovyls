@@ -129,7 +129,8 @@ public class CompletionProvider {
 
 	private void populateItemsFromPropertyExpression(final PropertyExpression propExpr, final Position position,
 			final List<CompletionItem> items) {
-		if (!(GroovyLanguageServerUtils.astNodeToRange(propExpr.getProperty()) instanceof final Range propertyRange))
+		final var propertyRange = GroovyLanguageServerUtils.astNodeToRange(propExpr.getProperty());
+		if (propertyRange == null)
 			return;
 		final var memberName = getMemberName(propExpr.getPropertyAsString(), propertyRange, position);
 		populateItemsFromExpression(propExpr.getObjectExpression(), memberName, items);
@@ -137,7 +138,8 @@ public class CompletionProvider {
 
 	private void populateItemsFromMethodCallExpression(final MethodCallExpression methodCallExpr,
 			final Position position, final List<CompletionItem> items) {
-		if (!(GroovyLanguageServerUtils.astNodeToRange(methodCallExpr.getMethod()) instanceof final Range methodRange))
+		final var methodRange = GroovyLanguageServerUtils.astNodeToRange(methodCallExpr.getMethod());
+		if (methodRange == null)
 			return;
 		final var memberName = getMemberName(methodCallExpr.getMethodAsString(), methodRange, position);
 		populateItemsFromExpression(methodCallExpr.getObjectExpression(), memberName, items);
@@ -145,7 +147,8 @@ public class CompletionProvider {
 
 	private void populateItemsFromImportNode(final ImportNode importNode, final Position position,
 			final List<CompletionItem> items) {
-		if (!(GroovyLanguageServerUtils.astNodeToRange(importNode) instanceof final Range importRange))
+		final var importRange = GroovyLanguageServerUtils.astNodeToRange(importNode);
+		if (importRange == null)
 			return;
 		// skip the "import " at the beginning
 		importRange.setStart(new Position(importRange.getEnd().getLine(),
@@ -230,7 +233,9 @@ public class CompletionProvider {
 
 		if (!(parentNode instanceof final ClassNode parentClassNode))
 			return;
-		if (!(GroovyLanguageServerUtils.astNodeToRange(classNode) instanceof final Range classRange))
+
+		final var classRange = GroovyLanguageServerUtils.astNodeToRange(classNode);
+		if (classRange == null)
 			return;
 
 		final var className = getMemberName(classNode.getUnresolvedName(), classRange, position);
@@ -243,7 +248,8 @@ public class CompletionProvider {
 
 	private void populateItemsFromConstructorCallExpression(final ConstructorCallExpression constructorCallExpr,
 			final Position position, final List<CompletionItem> items) {
-		if (!(GroovyLanguageServerUtils.astNodeToRange(constructorCallExpr.getType()) instanceof final Range typeRange))
+		final var typeRange = GroovyLanguageServerUtils.astNodeToRange(constructorCallExpr.getType());
+		if (typeRange == null)
 			return;
 		final var typeName = getMemberName(constructorCallExpr.getType().getNameWithoutPackage(), typeRange, position);
 		populateTypes(constructorCallExpr, typeName, new HashSet<>(), true, false, false, items);
@@ -264,7 +270,8 @@ public class CompletionProvider {
 
 	private void populateItemsFromVariableExpression(final VariableExpression varExpr, final Position position,
 			final List<CompletionItem> items, final boolean isInNodeBlock) {
-		if (!(GroovyLanguageServerUtils.astNodeToRange(varExpr) instanceof final Range varRange))
+		final var varRange = GroovyLanguageServerUtils.astNodeToRange(varExpr);
+		if (varRange == null)
 			return;
 		final var memberName = getMemberName(varExpr.getName(), varRange, position);
 		populateItemsFromScope(varExpr, memberName, items, isInNodeBlock);

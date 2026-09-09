@@ -224,7 +224,8 @@ public class GdslSymbolsManager {
 
         Class<?> clazz;
         try {
-            clazz = cl.loadClass((dslWrapperToActualType.get(symbol.type) instanceof final String s) ? s : symbol.type);
+            final var actualType = dslWrapperToActualType.get(symbol.type);
+            clazz = cl.loadClass((actualType != null) ? actualType : symbol.type);
         } catch (ClassNotFoundException e) {
             System.err.println("Could not find class: " + e.getMessage());
             return;

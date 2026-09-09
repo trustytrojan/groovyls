@@ -119,22 +119,30 @@ public class GroovyASTUtils {
             if (parentNode instanceof final MethodCallExpression mce) {
                 // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata when it finds a
                 // matching method.
+                // Use pattern matching here because we need to return an ASTNode.
+                // It is expected that the STC fills in DIRECT_METHOD_CALL_TARGET with a
+                // MethodNode, so we pattern match for it.
                 if (mce.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
                     return mn;
 
-                if (mce.getMethodTarget() instanceof final MethodNode mn)
-                    return mn;
+                final var methodTarget = mce.getMethodTarget();
+                if (methodTarget != null)
+                    return methodTarget;
 
                 return GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
             } else if (parentNode instanceof final PropertyExpression pe) {
                 // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata for
                 // PropertyExpressions where a matching getter is available.
                 // For example: `new Object().class` calls `Object.getClass()`.
+                // Use pattern matching here because we need to return an ASTNode.
+                // It is expected that the STC fills in DIRECT_METHOD_CALL_TARGET with a
+                // MethodNode, so we pattern match for it.
                 if (pe.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
                     return mn;
 
-                if (GroovyASTUtils.getPropertyFromExpression(pe, astVisitor) instanceof final PropertyNode pn)
-                    return pn;
+                final var propNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
+                if (propNode != null)
+                    return propNode;
 
                 return GroovyASTUtils.getFieldFromExpression(pe, astVisitor);
             }
@@ -327,24 +335,31 @@ public class GroovyASTUtils {
         } else if (node instanceof final MethodCallExpression mce) {
             // Groovy's STC fills in INFERRED_TYPE with the return type of the method it
             // stored in DIRECT_METHOD_CALL_TARGET.
+            // It is expected that the STC fills in INFERRED_TYPE with a ClassNode, so we
+            // pattern match for it.
             if (mce.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn)
                 return cn;
 
-            if (GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor) instanceof final MethodNode mn)
-                return mn.getReturnType();
+            final var method = GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
+            if (method != null)
+                return method.getReturnType();
 
             return mce.getType();
         } else if (node instanceof final PropertyExpression pe) {
             // Groovy's STC fills in INFERRED_TYPE with the return type of the method it
             // stored in DIRECT_METHOD_CALL_TARGET.
+            // It is expected that the STC fills in INFERRED_TYPE with a ClassNode, so we
+            // pattern match for it.
             if (pe.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn)
                 return cn;
 
-            if (GroovyASTUtils.getPropertyFromExpression(pe, astVisitor) instanceof final PropertyNode pn)
-                return getTypeOfNode(pn, astVisitor);
+            final var propNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
+            if (propNode != null)
+                return getTypeOfNode(propNode, astVisitor);
 
-            if (GroovyASTUtils.getFieldFromExpression(pe, astVisitor) instanceof final FieldNode fn)
-                return getTypeOfNode(fn, astVisitor);
+            final var fieldNode = GroovyASTUtils.getFieldFromExpression(pe, astVisitor);
+            if (fieldNode != null)
+                return getTypeOfNode(fieldNode, astVisitor);
 
             return pe.getType();
         } else if (node instanceof final Variable var) {
@@ -356,6 +371,9 @@ public class GroovyASTUtils {
             } else if (var.isDynamicTyped()) {
                 if (var instanceof final VariableExpression ve) {
                     // We run the STC over the AST now, so prefer the inferred type if available.
+                    // Use pattern matching because we need to return a ClassNode.
+                    // It is expected that the STC fills in INFERRED_TYPE with a ClassNode, so we
+                    // pattern match for it.
                     if (ve.getNodeMetaData("groovyls-original-inferred-type") instanceof final ClassNode cn)
                         return cn;
 
