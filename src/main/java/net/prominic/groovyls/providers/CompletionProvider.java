@@ -66,6 +66,7 @@ import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.compiler.util.GroovydocUtils;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
+import net.prominic.groovyls.util.GroovyNodeToStringUtils;
 
 public class CompletionProvider {
 	private static final int MAX_ITEM_COUNT = 1000;
@@ -338,7 +339,8 @@ public class CompletionProvider {
 			item.setLabel(method.getName());
 			var methodParams = "(";
 			for (final var p : method.getParameters())
-				methodParams += p.getType().getNameWithoutPackage() + ' ' + p.getName() + ", ";
+				methodParams += GroovyNodeToStringUtils.prettyPrintTypeWithoutPackage(p.getType()) + ' ' + p.getName()
+						+ ", ";
 			if (!methodParams.equals("("))
 				methodParams = methodParams.substring(0, methodParams.length() - 2);
 			methodParams += ')';

@@ -34,6 +34,8 @@ import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.PropertyNode;
 import org.codehaus.groovy.ast.Variable;
+import org.codehaus.groovy.ast.expr.ClassExpression;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.DeclarationExpression;
 import org.codehaus.groovy.ast.expr.Expression;
@@ -217,6 +219,9 @@ public class SemanticTokensProvider {
 		for (final var node : astVisitor.getNodes(uri)) {
 			// debugPrint(node, currentDocumentText);
 
+			if (node instanceof ConstantExpression || node instanceof ClassNode)
+				continue;
+
 			if (node instanceof final ConstructorCallExpression cce) {
 				final var type = cce.getType();
 				if (type.equals(ClassHelper.OBJECT_TYPE))
@@ -237,6 +242,11 @@ public class SemanticTokensProvider {
 				processMethodCall(mce, tokens);
 			} else if (node instanceof final PropertyExpression pe) {
 				processPropertyExpression(pe, tokens);
+			} else if (node instanceof final ClassExpression ce) {
+				final var r = GroovyLanguageServerUtils.astNodeToRange(ce);
+				if (r == null)
+					continue;
+				tokens.add(makeTokenFromRange(r, SemanticTokenTypes.CLASS.ordinal(), 0));
 			} else {
 				processDeclaration(node, tokens);
 			}
