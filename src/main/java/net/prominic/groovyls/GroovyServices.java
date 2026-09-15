@@ -48,6 +48,7 @@ import org.codehaus.groovy.classgen.VariableScopeVisitor;
 import org.codehaus.groovy.control.CompilationFailedException;
 import org.codehaus.groovy.control.ErrorCollector;
 import org.codehaus.groovy.control.Phases;
+import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.control.messages.Message;
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
 import org.codehaus.groovy.syntax.SyntaxException;
@@ -99,10 +100,8 @@ import org.eclipse.lsp4j.SemanticTokensParams;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureHelpParams;
 import org.eclipse.lsp4j.SymbolInformation;
-import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TypeDefinitionParams;
-import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.WorkspaceSymbol;
 import org.eclipse.lsp4j.WorkspaceSymbolParams;
@@ -122,6 +121,7 @@ import io.github.classgraph.ScanResult;
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.ast.MySTCVisitor;
 import net.prominic.groovyls.compiler.control.GroovyLSCompilationUnit;
+import net.prominic.groovyls.compiler.control.io.StringReaderSourceWithURI;
 import net.prominic.groovyls.config.ICompilationUnitFactory;
 import net.prominic.groovyls.gdsl.GdslSymbolsManager;
 import net.prominic.groovyls.providers.CompletionProvider;
@@ -151,7 +151,6 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	private FileContentsTracker fileContentsTracker = new FileContentsTracker();
 	private ScanResult classGraphScanResult = null;
 	private GroovyClassLoader classLoader = null;
-	private URI previousContext = null;
 	private GdslSymbolsManager gdslSymbolsManager = new GdslSymbolsManager();
 	private SemanticTokensProvider semanticTokensProvider = null;
 	private final Set<String> dependencyClasspaths = new HashSet<>();
@@ -254,16 +253,12 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		createOrUpdateCompilationUnit();
 		compile();
 		visitAST();
-		previousContext = null;
 	}
 
 	// --- REQUESTS
 
 	@Override
 	public CompletableFuture<Hover> hover(HoverParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
-		recompileIfContextChanged(uri);
-
 		HoverProvider provider = new HoverProvider(astVisitor);
 		return provider.provideHover(params.getTextDocument(), params.getPosition());
 	}
@@ -274,49 +269,29 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		Position position = params.getPosition();
 		URI uri = URI.create(textDocument.getUri());
 
-		recompileIfContextChanged(uri);
-
-		String originalSource = null;
+		SourceUnit originalSourceUnit = null;
+		SourceUnit speculativeSourceUnit = null;
 		ASTNode offsetNode = astVisitor.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
-			originalSource = fileContentsTracker.getContents(uri);
-			VersionedTextDocumentIdentifier versionedTextDocument = new VersionedTextDocumentIdentifier(
-					textDocument.getUri(), 1);
+			String originalSource = fileContentsTracker.getContents(uri);
 			int offset = Positions.getOffset(originalSource, position);
 			String lineBeforeOffset = originalSource.substring(offset - position.getCharacter(), offset);
 			Matcher matcher = PATTERN_CONSTRUCTOR_CALL.matcher(lineBeforeOffset);
-			TextDocumentContentChangeEvent changeEvent = null;
-			if (matcher.matches()) {
-				changeEvent = new TextDocumentContentChangeEvent(new Range(position, position), 0, "a()");
-			} else {
-				changeEvent = new TextDocumentContentChangeEvent(new Range(position, position), 0, "a");
-			}
-			DidChangeTextDocumentParams didChangeParams = new DidChangeTextDocumentParams(versionedTextDocument,
-					Collections.singletonList(changeEvent));
-			// if the offset node is null, there is probably a syntax error.
-			// a completion request is usually triggered by the . character, and
-			// if there is no property name after the dot, it will cause a syntax
-			// error.
-			// this hack adds a placeholder property name in the hopes that it
-			// will correctly create a PropertyExpression to use for completion.
-			// we'll restore the original text after we're done handling the
-			// completion request.
-			didChange(didChangeParams);
+			String placeholder = matcher.matches() ? "a()" : "a";
+			originalSourceUnit = findSourceUnit(uri);
+			speculativeSourceUnit = installSpeculativeSource(uri, originalSource, position, placeholder,
+					originalSourceUnit);
 		}
 
 		CompletableFuture<Either<List<CompletionItem>, CompletionList>> result = null;
 		try {
 			CompletionProvider provider = new CompletionProvider(astVisitor, classGraphScanResult);
+			// final var start = System.currentTimeMillis();
 			result = provider.provideCompletion(params.getTextDocument(), params.getPosition(), params.getContext());
+			// System.out.printf("provideCompletion runtime: %sms\n", System.currentTimeMillis() - start);
 		} finally {
-			if (originalSource != null) {
-				VersionedTextDocumentIdentifier versionedTextDocument = new VersionedTextDocumentIdentifier(
-						textDocument.getUri(), 1);
-				TextDocumentContentChangeEvent changeEvent = new TextDocumentContentChangeEvent(null, 0,
-						originalSource);
-				DidChangeTextDocumentParams didChangeParams = new DidChangeTextDocumentParams(versionedTextDocument,
-						Collections.singletonList(changeEvent));
-				didChange(didChangeParams);
+			if (originalSourceUnit != null) {
+				restoreSpeculativeSource(uri, originalSourceUnit, speculativeSourceUnit);
 			}
 		}
 
@@ -326,9 +301,6 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	@Override
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
 			DefinitionParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
-		recompileIfContextChanged(uri);
-
 		DefinitionProvider provider = new DefinitionProvider(astVisitor);
 		return provider.provideDefinition(params.getTextDocument(), params.getPosition());
 	}
@@ -339,41 +311,22 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		Position position = params.getPosition();
 		URI uri = URI.create(textDocument.getUri());
 
-		recompileIfContextChanged(uri);
-
-		String originalSource = null;
+		SourceUnit originalSourceUnit = null;
+		SourceUnit speculativeSourceUnit = null;
 		ASTNode offsetNode = astVisitor.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
-			originalSource = fileContentsTracker.getContents(uri);
-			VersionedTextDocumentIdentifier versionedTextDocument = new VersionedTextDocumentIdentifier(
-					textDocument.getUri(), 1);
-			TextDocumentContentChangeEvent changeEvent = new TextDocumentContentChangeEvent(
-					new Range(position, position), 0, ")");
-			DidChangeTextDocumentParams didChangeParams = new DidChangeTextDocumentParams(versionedTextDocument,
-					Collections.singletonList(changeEvent));
-			// if the offset node is null, there is probably a syntax error.
-			// a signature help request is usually triggered by the ( character,
-			// and if there is no matching ), it will cause a syntax error.
-			// this hack adds a placeholder ) character in the hopes that it
-			// will correctly create a ArgumentListExpression to use for
-			// signature help.
-			// we'll restore the original text after we're done handling the
-			// signature help request.
-			didChange(didChangeParams);
+			String originalSource = fileContentsTracker.getContents(uri);
+			originalSourceUnit = findSourceUnit(uri);
+			speculativeSourceUnit = installSpeculativeSource(uri, originalSource, position, ")",
+					originalSourceUnit);
 		}
 
 		try {
 			SignatureHelpProvider provider = new SignatureHelpProvider(astVisitor);
 			return provider.provideSignatureHelp(params.getTextDocument(), params.getPosition());
 		} finally {
-			if (originalSource != null) {
-				VersionedTextDocumentIdentifier versionedTextDocument = new VersionedTextDocumentIdentifier(
-						textDocument.getUri(), 1);
-				TextDocumentContentChangeEvent changeEvent = new TextDocumentContentChangeEvent(null, 0,
-						originalSource);
-				DidChangeTextDocumentParams didChangeParams = new DidChangeTextDocumentParams(versionedTextDocument,
-						Collections.singletonList(changeEvent));
-				didChange(didChangeParams);
+			if (originalSourceUnit != null) {
+				restoreSpeculativeSource(uri, originalSourceUnit, speculativeSourceUnit);
 			}
 		}
 	}
@@ -381,18 +334,12 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	@Override
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(
 			TypeDefinitionParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
-		recompileIfContextChanged(uri);
-
 		TypeDefinitionProvider provider = new TypeDefinitionProvider(astVisitor);
 		return provider.provideTypeDefinition(params.getTextDocument(), params.getPosition());
 	}
 
 	@Override
 	public CompletableFuture<List<? extends Location>> references(ReferenceParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
-		recompileIfContextChanged(uri);
-
 		ReferenceProvider provider = new ReferenceProvider(astVisitor);
 		return provider.provideReferences(params.getTextDocument(), params.getPosition());
 	}
@@ -400,9 +347,6 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	@Override
 	public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
 			DocumentSymbolParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
-		recompileIfContextChanged(uri);
-
 		DocumentSymbolProvider provider = new DocumentSymbolProvider(astVisitor);
 		return provider.provideDocumentSymbols(params.getTextDocument());
 	}
@@ -410,13 +354,14 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	@Override
 	public CompletableFuture<SemanticTokens> semanticTokensFull(SemanticTokensParams params) {
 		TextDocumentIdentifier textDocument = params.getTextDocument();
-		URI uri = URI.create(textDocument.getUri());
-		recompileIfContextChanged(uri);
-
 		// Ensure semantic tokens provider is initialized
 		if (semanticTokensProvider == null) {
 			semanticTokensProvider = new SemanticTokensProvider(fileContentsTracker, astVisitor);
 		}
+
+		// final var start = System.currentTimeMillis();
+		semanticTokensProvider.provideFull(textDocument);
+		// System.out.printf("SemanticTokensProvider#provideFull runtime: %sms\n", System.currentTimeMillis() - start);
 
 		// Provide semantic tokens - GDSL symbols are injected before LSP transmission
 		return CompletableFuture.completedFuture(semanticTokensProvider.provideFull(textDocument));
@@ -431,14 +376,66 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	@Override
 	public CompletableFuture<WorkspaceEdit> rename(RenameParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
-		recompileIfContextChanged(uri);
-
 		RenameProvider provider = new RenameProvider(astVisitor, fileContentsTracker);
 		return provider.provideRename(params);
 	}
 
 	// --- INTERNAL
+
+	private SourceUnit findSourceUnit(URI uri) {
+		if (compilationUnit == null) {
+			return null;
+		}
+		final SourceUnit[] result = new SourceUnit[1];
+		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
+			if (uri.equals(sourceUnit.getSource().getURI())) {
+				result[0] = sourceUnit;
+			}
+		});
+		return result[0];
+	}
+
+	private SourceUnit installSpeculativeSource(URI uri, String originalSource, Position position,
+			String placeholder, SourceUnit originalSourceUnit) {
+		if (originalSource == null || originalSourceUnit == null || compilationUnit == null) {
+			return null;
+		}
+		int offset = Positions.getOffset(originalSource, position);
+		String speculativeSource = originalSource.substring(0, offset) + placeholder
+				+ originalSource.substring(offset);
+		SourceUnit speculativeSourceUnit = new SourceUnit(Paths.get(uri).toString(),
+				new StringReaderSourceWithURI(speculativeSource, uri, compilationUnit.getConfiguration()),
+				compilationUnit.getConfiguration(), compilationUnit.getClassLoader(),
+				compilationUnit.getErrorCollector());
+		compilationUnit.removeSource(originalSourceUnit);
+		compilationUnit.addSource(speculativeSourceUnit);
+		compileSpeculative();
+		visitAST(Collections.singleton(uri));
+		return speculativeSourceUnit;
+	}
+
+	private void restoreSpeculativeSource(URI uri, SourceUnit originalSourceUnit, SourceUnit speculativeSourceUnit) {
+		if (compilationUnit == null || speculativeSourceUnit == null) {
+			return;
+		}
+		compilationUnit.removeSource(speculativeSourceUnit);
+		compilationUnit.restoreSource(originalSourceUnit);
+		visitAST(Collections.singleton(uri));
+	}
+
+	private void compileSpeculative() {
+		try {
+			compilationUnit.compile(Phases.CANONICALIZATION);
+		} catch (CompilationFailedException e) {
+			// The placeholder is only a code-intelligence aid; syntax errors are expected.
+		} catch (GroovyBugError e) {
+			System.err.println("Unexpected exception in speculative Groovy compilation.");
+			e.printStackTrace(System.err);
+		} catch (Exception e) {
+			System.err.println("Unexpected exception in speculative Groovy compilation.");
+			e.printStackTrace(System.err);
+		}
+	}
 
 	/**
 	 * Resolves a Maven package using the user's home ~/.m2 repository and returns a
@@ -609,24 +606,20 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		return compilationUnit != null && compilationUnit.equals(oldCompilationUnit);
 	}
 
-	protected void recompileIfContextChanged(URI newContext) {
-		if (previousContext == null || previousContext.equals(newContext)) {
-			return;
-		}
-		fileContentsTracker.forceChanged(newContext);
-		compileAndVisitAST(newContext);
-	}
-
 	private void compileAndVisitAST(URI contextURI) {
+		// System.out.printf("compileAndVisitAST: contextURI='%s'\n", contextURI);
 		Set<URI> uris = Collections.singleton(contextURI);
 		boolean isSameUnit = createOrUpdateCompilationUnit();
+		// var start = System.currentTimeMillis();
 		compile();
+		// System.out.printf("compileAndVisitAST: compile runtime: %sms\n", System.currentTimeMillis() - start);
+		// start = System.currentTimeMillis();
 		if (isSameUnit) {
 			visitAST(uris);
 		} else {
 			visitAST();
 		}
-		previousContext = contextURI;
+		// System.out.printf("compileAndVisitAST: visitAST runtime: %sms\n", System.currentTimeMillis() - start);
 	}
 
 	private void compile() {

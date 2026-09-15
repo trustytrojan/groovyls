@@ -25,6 +25,9 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -162,7 +165,8 @@ public class CompilationUnitFactory implements ICompilationUnitFactory {
 		try {
 			if (Files.exists(dirPath)) {
 				Files.walk(dirPath).forEach((filePath) -> {
-					if (!filePath.toString().endsWith(FILE_EXTENSION_GROOVY)) {
+					if (!filePath.toString().endsWith(FILE_EXTENSION_GROOVY)
+							&& !"Jenkinsfile".equals(filePath.getFileName().toString())) {
 						return;
 					}
 					URI fileURI = filePath.toUri();
@@ -170,7 +174,7 @@ public class CompilationUnitFactory implements ICompilationUnitFactory {
 						File file = filePath.toFile();
 						if (file.isFile()) {
 							if (changedUris == null || changedUris.contains(fileURI)) {
-								compilationUnit.addSource(file);
+								addFileToCompilationUnit(file.toPath(), compilationUnit);
 							}
 						}
 					}
@@ -194,11 +198,37 @@ public class CompilationUnitFactory implements ICompilationUnitFactory {
 	}
 
 	protected void addOpenFileToCompilationUnit(URI uri, String contents, GroovyLSCompilationUnit compilationUnit) {
-		Path filePath = Paths.get(uri);
-		SourceUnit sourceUnit = new SourceUnit(filePath.toString(),
+		SourceUnit sourceUnit = new SourceUnit(getSourceName(uri),
 				new StringReaderSourceWithURI(contents, uri, compilationUnit.getConfiguration()),
 				compilationUnit.getConfiguration(), compilationUnit.getClassLoader(),
 				compilationUnit.getErrorCollector());
 		compilationUnit.addSource(sourceUnit);
+	}
+
+	private void addFileToCompilationUnit(Path filePath, GroovyLSCompilationUnit compilationUnit) {
+		try {
+			addOpenFileToCompilationUnit(filePath.toUri(), Files.readString(filePath), compilationUnit);
+		} catch (IOException e) {
+			System.err.println("Failed to read Groovy source file: " + filePath);
+		}
+	}
+
+	private String getSourceName(URI uri) {
+		Path filePath = Paths.get(uri);
+		if (!"Jenkinsfile".equals(filePath.getFileName().toString())) {
+			return filePath.toString();
+		}
+
+		try {
+			byte[] digest = MessageDigest.getInstance("SHA-256")
+					.digest(uri.toString().getBytes(StandardCharsets.UTF_8));
+			StringBuilder hash = new StringBuilder();
+			for (byte value : digest) {
+				hash.append(String.format("%02x", value));
+			}
+			return "Jenkinsfile_" + hash + ".groovy";
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("SHA-256 is not available", e);
+		}
 	}
 }

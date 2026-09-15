@@ -73,4 +73,11 @@ public class GroovyLSCompilationUnit extends CompilationUnit {
 	public void removeSource(SourceUnit sourceUnit) {
 		removeSources(Collections.singletonList(sourceUnit));
 	}
+
+	public void restoreSource(SourceUnit sourceUnit) {
+		addSource(sourceUnit);
+		if (sourceUnit.getAST() != null) {
+			ast.addModule(sourceUnit.getAST());
+		}
+	}
 }

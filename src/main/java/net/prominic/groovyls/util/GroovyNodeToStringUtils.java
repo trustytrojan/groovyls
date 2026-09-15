@@ -21,6 +21,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 package net.prominic.groovyls.util;
 
+import java.util.function.Function;
+
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
@@ -68,12 +70,12 @@ public class GroovyNodeToStringUtils {
 	}
 
 	// Modified copy of ClassNode.toString(boolean)
-	public static String prettyPrintType(final ClassNode cn, final String name) {
+	public static String prettyPrintType(final ClassNode cn, final Function<ClassNode, String> nameGetter) {
 		if (cn.isArray()) {
-			return name + "[]";
+			return nameGetter.apply(cn.getComponentType()) + "[]";
 		}
 		final var placeholder = cn.isGenericsPlaceHolder();
-		final var ret = new StringBuilder(!placeholder ? name : cn.getUnresolvedName());
+		final var ret = new StringBuilder(!placeholder ? nameGetter.apply(cn) : cn.getUnresolvedName());
 		{
 			final var genericsTypes = cn.getGenericsTypes();
 			if (!placeholder && genericsTypes != null) {
@@ -90,11 +92,11 @@ public class GroovyNodeToStringUtils {
 	}
 
 	public static String prettyPrintTypeWithoutPackage(final ClassNode cn) {
-		return prettyPrintType(cn, cn.getNameWithoutPackage());
+		return prettyPrintType(cn, c -> c.getNameWithoutPackage());
 	}
 
 	public static String prettyPrintTypeWithPackage(final ClassNode cn) {
-		return prettyPrintType(cn, cn.getName());
+		return prettyPrintType(cn, c -> c.getName());
 	}
 
 	public static String variableToString(final Variable v, final ASTNodeVisitor ast) {
