@@ -25,9 +25,6 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -213,22 +210,13 @@ public class CompilationUnitFactory implements ICompilationUnitFactory {
 		}
 	}
 
+	private int jenkinsfileCount = 0;
+
 	private String getSourceName(URI uri) {
 		Path filePath = Paths.get(uri);
 		if (!"Jenkinsfile".equals(filePath.getFileName().toString())) {
 			return filePath.toString();
 		}
-
-		try {
-			byte[] digest = MessageDigest.getInstance("SHA-256")
-					.digest(uri.toString().getBytes(StandardCharsets.UTF_8));
-			StringBuilder hash = new StringBuilder();
-			for (byte value : digest) {
-				hash.append(String.format("%02x", value));
-			}
-			return "Jenkinsfile_" + hash + ".groovy";
-		} catch (NoSuchAlgorithmException e) {
-			throw new IllegalStateException("SHA-256 is not available", e);
-		}
+		return "Jenkinsfile_" + (jenkinsfileCount++) + ".groovy";
 	}
 }

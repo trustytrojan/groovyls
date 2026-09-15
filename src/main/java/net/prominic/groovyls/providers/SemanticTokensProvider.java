@@ -368,6 +368,7 @@ public class SemanticTokensProvider {
 			}
 
 			tokens.add(new Token(lineno, charno, propName.length(), SemanticTokenTypes.PROPERTY.ordinal(), modifiers));
+			return;
 		}
 
 		// Use these utility functions because they also take into account member
@@ -380,6 +381,9 @@ public class SemanticTokensProvider {
 			modifiers = getModifiersOfNode(fieldNode);
 		else if (propertyNode != null)
 			modifiers = getModifiersOfNode(propertyNode);
+		else
+			// No property or field, don't color it in.
+			return;
 
 		tokens.add(new Token(lineno, charno, propName.length(), SemanticTokenTypes.PROPERTY.ordinal(), modifiers));
 	}

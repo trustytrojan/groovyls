@@ -163,7 +163,7 @@ public class MySTCVisitor extends StaticTypeCheckingVisitor {
 				mopMethod = getMostDerivedMethod(receiverType, "get", name);
 				if (mopMethod == null)
 					mopMethod = getMostDerivedMethod(receiverType, "getProperty", name);
-				if (mopMethod == null || mopMethod.isStatic() || mopMethod.isSynthetic())
+				if (mopMethod == null || mopMethod.isStatic())
 					mopMethod = getMostDerivedMethod(receiverType, "propertyMissing", name);
 			} else {
 				final var nameAndValue = new Parameter[] {
@@ -172,11 +172,11 @@ public class MySTCVisitor extends StaticTypeCheckingVisitor {
 				mopMethod = getMostDerivedMethod(receiverType, "set", nameAndValue);
 				if (mopMethod == null)
 					mopMethod = getMostDerivedMethod(receiverType, "setProperty", nameAndValue);
-				if (mopMethod == null || mopMethod.isStatic() || mopMethod.isSynthetic())
+				if (mopMethod == null || mopMethod.isStatic())
 					mopMethod = getMostDerivedMethod(receiverType, "propertyMissing", nameAndValue);
 			}
 
-			if (mopMethod != null && !mopMethod.isStatic() && !mopMethod.isSynthetic()) {
+			if (mopMethod != null) {
 				pexp.putNodeMetaData(StaticTypesMarker.DYNAMIC_RESOLUTION, Boolean.TRUE);
 				pexp.putNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET, mopMethod);
 				pexp.putNodeMetaData(StaticTypesMarker.INFERRED_TYPE, mopMethod.getReturnType());
@@ -216,10 +216,6 @@ public class MySTCVisitor extends StaticTypeCheckingVisitor {
 	}
 
 	public static MethodNode getMostDerivedMethod(final ClassNode cn, final String name, final Parameter[] params) {
-		final var declared = cn.getDeclaredMethod(name, params);
-		if (declared != null)
-			return declared;
-
 		final var candidates = getMethods(cn, name, params);
 		if (candidates.size() == 0)
 			return null;
