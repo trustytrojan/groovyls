@@ -21,13 +21,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 package net.prominic.groovyls;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintStream;
 import java.net.URI;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.lsp4j.CompletionOptions;
@@ -52,67 +49,60 @@ import net.prominic.groovyls.providers.SemanticTokensProvider;
 
 public class GroovyLanguageServer implements LanguageServer, LanguageClientAware {
     @Override
-    public void setTrace(SetTraceParams params) {
+    public void setTrace(final SetTraceParams params) {
         System.out.println("setTrace: " + params);
     }
 
-    public static void main(String[] args) {
-        InputStream systemIn = System.in;
-        OutputStream systemOut = System.out;
+    public static void main(final String[] args) {
+        final var systemOut = System.out;
         // redirect System.out to System.err because we need to prevent
         // System.out from receiving anything that isn't an LSP message
-        System.setOut(new PrintStream(System.err));
-        GroovyLanguageServer server = new GroovyLanguageServer();
-        Launcher<LanguageClient> launcher = Launcher.createLauncher(server, LanguageClient.class, systemIn, systemOut);
+        System.setOut(System.err);
+        final var server = new GroovyLanguageServer();
+        final var launcher = Launcher.createLauncher(server, LanguageClient.class, System.in, systemOut);
         server.connect(launcher.getRemoteProxy());
         launcher.startListening();
     }
 
-    private GroovyServices groovyServices;
+    private final GroovyServices groovyServices;
 
     public GroovyLanguageServer() {
         this(new CompilationUnitFactory());
     }
 
-    public GroovyLanguageServer(ICompilationUnitFactory compilationUnitFactory) {
+    public GroovyLanguageServer(final ICompilationUnitFactory compilationUnitFactory) {
         this.groovyServices = new GroovyServices(compilationUnitFactory);
     }
 
     @Override
-    public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
-        String rootUriString = params.getRootUri();
+    public CompletableFuture<InitializeResult> initialize(final InitializeParams params) {
+        final var rootUriString = params.getRootUri();
         if (rootUriString != null) {
-            URI uri = URI.create(params.getRootUri());
-            Path workspaceRoot = Paths.get(uri);
+            final var uri = URI.create(params.getRootUri());
+            final var workspaceRoot = Paths.get(uri);
             groovyServices.setWorkspaceRoot(workspaceRoot);
         }
 
-        CompletionOptions completionOptions = new CompletionOptions(false, Arrays.asList("."));
-        ServerCapabilities serverCapabilities = new ServerCapabilities();
-        serverCapabilities.setCompletionProvider(completionOptions);
-        serverCapabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
-        serverCapabilities.setDocumentSymbolProvider(true);
-        serverCapabilities.setWorkspaceSymbolProvider(true);
-        serverCapabilities.setDocumentSymbolProvider(true);
-        serverCapabilities.setReferencesProvider(true);
-        serverCapabilities.setDefinitionProvider(true);
-        serverCapabilities.setTypeDefinitionProvider(true);
-        serverCapabilities.setHoverProvider(true);
-        serverCapabilities.setRenameProvider(true);
-        SignatureHelpOptions signatureHelpOptions = new SignatureHelpOptions();
-        signatureHelpOptions.setTriggerCharacters(Arrays.asList("(", ","));
-        serverCapabilities.setSignatureHelpProvider(signatureHelpOptions);
+        final var sc = new ServerCapabilities();
 
-        // Register semantic tokens provider for full document tokenization
-        SemanticTokensWithRegistrationOptions semanticTokensOptions = new SemanticTokensWithRegistrationOptions();
-        semanticTokensOptions.setLegend(new SemanticTokensLegend(
+        sc.setCompletionProvider(new CompletionOptions(false, Arrays.asList(".")));
+        sc.setTextDocumentSync(TextDocumentSyncKind.Full);
+        sc.setDocumentSymbolProvider(true);
+        sc.setWorkspaceSymbolProvider(true);
+        sc.setDocumentSymbolProvider(true);
+        sc.setReferencesProvider(true);
+        sc.setDefinitionProvider(true);
+        sc.setTypeDefinitionProvider(true);
+        sc.setHoverProvider(true);
+        sc.setRenameProvider(true);
+        sc.setSignatureHelpProvider(new SignatureHelpOptions(List.of("(", ",")));
+
+        final var stl = new SemanticTokensLegend(
                 SemanticTokensProvider.SemanticTokenTypes.getList(),
-                SemanticTokensProvider.SemanticTokenModifiers.getList()));
-        semanticTokensOptions.setFull(true);
-        serverCapabilities.setSemanticTokensProvider(semanticTokensOptions);
+                SemanticTokensProvider.SemanticTokenModifiers.getList());
+        sc.setSemanticTokensProvider(new SemanticTokensWithRegistrationOptions(stl, true));
 
-        InitializeResult initializeResult = new InitializeResult(serverCapabilities);
-        return CompletableFuture.completedFuture(initializeResult);
+        return CompletableFuture.completedFuture(new InitializeResult(sc));
     }
 
     @Override
@@ -136,7 +126,7 @@ public class GroovyLanguageServer implements LanguageServer, LanguageClientAware
     }
 
     @Override
-    public void connect(LanguageClient client) {
+    public void connect(final LanguageClient client) {
         groovyServices.connect(client);
     }
 }

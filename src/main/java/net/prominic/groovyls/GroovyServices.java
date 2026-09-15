@@ -36,37 +36,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
 import org.codehaus.groovy.GroovyBugError;
-import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.classgen.VariableScopeVisitor;
 import org.codehaus.groovy.control.CompilationFailedException;
 import org.codehaus.groovy.control.ErrorCollector;
 import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.SourceUnit;
-import org.codehaus.groovy.control.messages.Message;
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
-import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
-import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
-import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.collection.CollectRequest;
-import org.eclipse.aether.collection.DependencySelector;
 import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory;
 import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.Exclusion;
-import org.eclipse.aether.impl.DefaultServiceLocator;
 import org.eclipse.aether.repository.LocalRepository;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.DependencyRequest;
-import org.eclipse.aether.resolution.DependencyResult;
 import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
 import org.eclipse.aether.spi.connector.transport.TransporterFactory;
 import org.eclipse.aether.transport.http.HttpTransporterFactory;
@@ -100,7 +91,6 @@ import org.eclipse.lsp4j.SemanticTokensParams;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureHelpParams;
 import org.eclipse.lsp4j.SymbolInformation;
-import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TypeDefinitionParams;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.WorkspaceSymbol;
@@ -111,6 +101,7 @@ import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -155,95 +146,85 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	private SemanticTokensProvider semanticTokensProvider = null;
 	private final Set<String> dependencyClasspaths = new HashSet<>();
 
-	public GroovyServices(ICompilationUnitFactory factory) {
+	public GroovyServices(final ICompilationUnitFactory factory) {
 		compilationUnitFactory = factory;
 	}
 
-	public void setWorkspaceRoot(Path workspaceRoot) {
+	public void setWorkspaceRoot(final Path workspaceRoot) {
 		this.workspaceRoot = workspaceRoot;
 		gdslSymbolsManager.loadGdslSymbols(workspaceRoot);
 		createOrUpdateCompilationUnit();
 	}
 
 	@Override
-	public void connect(LanguageClient client) {
+	public void connect(final LanguageClient client) {
 		languageClient = client;
 	}
 
 	// --- NOTIFICATIONS
 
 	@Override
-	public void didOpen(DidOpenTextDocumentParams params) {
+	public void didOpen(final DidOpenTextDocumentParams params) {
 		fileContentsTracker.didOpen(params);
-		URI uri = URI.create(params.getTextDocument().getUri());
-		compileAndVisitAST(uri);
+		compileAndVisitAST(URI.create(params.getTextDocument().getUri()));
 	}
 
 	@Override
-	public void didChange(DidChangeTextDocumentParams params) {
+	public void didChange(final DidChangeTextDocumentParams params) {
 		fileContentsTracker.didChange(params);
-		URI uri = URI.create(params.getTextDocument().getUri());
-		compileAndVisitAST(uri);
+		compileAndVisitAST(URI.create(params.getTextDocument().getUri()));
 	}
 
 	@Override
-	public void didClose(DidCloseTextDocumentParams params) {
+	public void didClose(final DidCloseTextDocumentParams params) {
 		fileContentsTracker.didClose(params);
-		URI uri = URI.create(params.getTextDocument().getUri());
-		compileAndVisitAST(uri);
+		compileAndVisitAST(URI.create(params.getTextDocument().getUri()));
 	}
 
 	@Override
-	public void didSave(DidSaveTextDocumentParams params) {
+	public void didSave(final DidSaveTextDocumentParams params) {
 		// nothing to handle on save at this time
 	}
 
 	@Override
-	public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {
-		boolean isSameUnit = createOrUpdateCompilationUnit();
-		Set<URI> urisWithChanges = params.getChanges().stream().map(fileEvent -> URI.create(fileEvent.getUri()))
+	public void didChangeWatchedFiles(final DidChangeWatchedFilesParams params) {
+		final var isSameUnit = createOrUpdateCompilationUnit();
+		final var urisWithChanges = params.getChanges().stream()
+				.map(fileEvent -> URI.create(fileEvent.getUri()))
 				.collect(Collectors.toSet());
 		compile();
-		if (isSameUnit) {
+		if (isSameUnit)
 			visitAST(urisWithChanges);
-		} else {
+		else
 			visitAST();
-		}
 	}
 
 	@Override
-	public void didChangeConfiguration(DidChangeConfigurationParams params) {
-		if (!(params.getSettings() instanceof JsonObject)) {
+	public void didChangeConfiguration(final DidChangeConfigurationParams params) {
+		if (!(params.getSettings() instanceof final JsonObject settings))
 			return;
-		}
-		JsonObject settings = (JsonObject) params.getSettings();
 		updateSettings(settings);
 	}
 
-	private void updateSettings(JsonObject settings) {
-		JsonElement _groovy = settings.get("groovy");
-		if (_groovy == null || !_groovy.isJsonObject())
+	private void updateSettings(final JsonObject settings) {
+		if (!(settings.get("groovy") instanceof final JsonObject groovy))
 			return;
-		JsonObject groovy = _groovy.getAsJsonObject();
 
-		JsonElement dependencies = groovy.get("dependencies");
-		boolean dependenciesInstalled = false;
-		if (dependencies != null && dependencies.isJsonObject()) {
-			installDependencies(dependencies.getAsJsonObject());
+		var dependenciesInstalled = false;
+		if (groovy.get("dependencies") instanceof final JsonObject dependencies) {
+			installDependencies(dependencies);
 			dependenciesInstalled = true;
 		}
 
-		JsonElement classpath = groovy.get("classpath");
-		if (classpath != null && classpath.isJsonArray())
-			updateClasspath(StreamSupport
-					.stream(classpath.getAsJsonArray().spliterator(), false)
+		if (groovy.get("classpath") instanceof final JsonArray classpath)
+			updateClasspath(StreamSupport.stream(classpath.spliterator(), false)
 					.map(JsonElement::getAsString)
-					.collect(Collectors.toList()));
+					.toList());
 		else if (dependenciesInstalled)
 			updateClasspath(new ArrayList<>());
 	}
 
-	private void updateClasspath(List<String> classpathList) {
+	private void updateClasspath(final List<String> classpathList) {
 		classpathList.addAll(dependencyClasspaths);
 
 		if (classpathList.equals(compilationUnitFactory.getAdditionalClasspathList()))
@@ -258,26 +239,25 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	// --- REQUESTS
 
 	@Override
-	public CompletableFuture<Hover> hover(HoverParams params) {
-		HoverProvider provider = new HoverProvider(astVisitor);
+	public CompletableFuture<Hover> hover(final HoverParams params) {
+		final var provider = new HoverProvider(astVisitor);
 		return provider.provideHover(params.getTextDocument(), params.getPosition());
 	}
 
 	@Override
-	public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams params) {
-		TextDocumentIdentifier textDocument = params.getTextDocument();
-		Position position = params.getPosition();
-		URI uri = URI.create(textDocument.getUri());
+	public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(final CompletionParams params) {
+		final var textDocument = params.getTextDocument();
+		final var position = params.getPosition();
+		final var uri = URI.create(textDocument.getUri());
 
-		SourceUnit originalSourceUnit = null;
-		SourceUnit speculativeSourceUnit = null;
-		ASTNode offsetNode = astVisitor.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
+		SourceUnit originalSourceUnit = null, speculativeSourceUnit = null;
+		final var offsetNode = astVisitor.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
-			String originalSource = fileContentsTracker.getContents(uri);
-			int offset = Positions.getOffset(originalSource, position);
-			String lineBeforeOffset = originalSource.substring(offset - position.getCharacter(), offset);
-			Matcher matcher = PATTERN_CONSTRUCTOR_CALL.matcher(lineBeforeOffset);
-			String placeholder = matcher.matches() ? "a()" : "a";
+			final var originalSource = fileContentsTracker.getContents(uri);
+			final var offset = Positions.getOffset(originalSource, position);
+			final var lineBeforeOffset = originalSource.substring(offset - position.getCharacter(), offset);
+			final var matcher = PATTERN_CONSTRUCTOR_CALL.matcher(lineBeforeOffset);
+			final var placeholder = matcher.matches() ? "a()" : "a";
 			originalSourceUnit = findSourceUnit(uri);
 			speculativeSourceUnit = installSpeculativeSource(uri, originalSource, position, placeholder,
 					originalSourceUnit);
@@ -285,10 +265,8 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 		CompletableFuture<Either<List<CompletionItem>, CompletionList>> result = null;
 		try {
-			CompletionProvider provider = new CompletionProvider(astVisitor, classGraphScanResult);
-			// final var start = System.currentTimeMillis();
+			final var provider = new CompletionProvider(astVisitor, classGraphScanResult);
 			result = provider.provideCompletion(params.getTextDocument(), params.getPosition(), params.getContext());
-			// System.out.printf("provideCompletion runtime: %sms\n", System.currentTimeMillis() - start);
 		} finally {
 			if (originalSourceUnit != null) {
 				restoreSpeculativeSource(uri, originalSourceUnit, speculativeSourceUnit);
@@ -300,29 +278,28 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	@Override
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
-			DefinitionParams params) {
-		DefinitionProvider provider = new DefinitionProvider(astVisitor);
+			final DefinitionParams params) {
+		final var provider = new DefinitionProvider(astVisitor);
 		return provider.provideDefinition(params.getTextDocument(), params.getPosition());
 	}
 
 	@Override
-	public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams params) {
-		TextDocumentIdentifier textDocument = params.getTextDocument();
-		Position position = params.getPosition();
-		URI uri = URI.create(textDocument.getUri());
+	public CompletableFuture<SignatureHelp> signatureHelp(final SignatureHelpParams params) {
+		final var textDocument = params.getTextDocument();
+		final var position = params.getPosition();
+		final var uri = URI.create(textDocument.getUri());
 
-		SourceUnit originalSourceUnit = null;
-		SourceUnit speculativeSourceUnit = null;
-		ASTNode offsetNode = astVisitor.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
+		SourceUnit originalSourceUnit = null, speculativeSourceUnit = null;
+		final var offsetNode = astVisitor.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
-			String originalSource = fileContentsTracker.getContents(uri);
+			final var originalSource = fileContentsTracker.getContents(uri);
 			originalSourceUnit = findSourceUnit(uri);
 			speculativeSourceUnit = installSpeculativeSource(uri, originalSource, position, ")",
 					originalSourceUnit);
 		}
 
 		try {
-			SignatureHelpProvider provider = new SignatureHelpProvider(astVisitor);
+			final var provider = new SignatureHelpProvider(astVisitor);
 			return provider.provideSignatureHelp(params.getTextDocument(), params.getPosition());
 		} finally {
 			if (originalSourceUnit != null) {
@@ -333,35 +310,31 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	@Override
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(
-			TypeDefinitionParams params) {
-		TypeDefinitionProvider provider = new TypeDefinitionProvider(astVisitor);
+			final TypeDefinitionParams params) {
+		final var provider = new TypeDefinitionProvider(astVisitor);
 		return provider.provideTypeDefinition(params.getTextDocument(), params.getPosition());
 	}
 
 	@Override
-	public CompletableFuture<List<? extends Location>> references(ReferenceParams params) {
-		ReferenceProvider provider = new ReferenceProvider(astVisitor);
+	public CompletableFuture<List<? extends Location>> references(final ReferenceParams params) {
+		final var provider = new ReferenceProvider(astVisitor);
 		return provider.provideReferences(params.getTextDocument(), params.getPosition());
 	}
 
 	@Override
 	public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
-			DocumentSymbolParams params) {
-		DocumentSymbolProvider provider = new DocumentSymbolProvider(astVisitor);
+			final DocumentSymbolParams params) {
+		final var provider = new DocumentSymbolProvider(astVisitor);
 		return provider.provideDocumentSymbols(params.getTextDocument());
 	}
 
 	@Override
-	public CompletableFuture<SemanticTokens> semanticTokensFull(SemanticTokensParams params) {
-		TextDocumentIdentifier textDocument = params.getTextDocument();
+	public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
+		final var textDocument = params.getTextDocument();
 		// Ensure semantic tokens provider is initialized
 		if (semanticTokensProvider == null) {
 			semanticTokensProvider = new SemanticTokensProvider(fileContentsTracker, astVisitor);
 		}
-
-		// final var start = System.currentTimeMillis();
-		semanticTokensProvider.provideFull(textDocument);
-		// System.out.printf("SemanticTokensProvider#provideFull runtime: %sms\n", System.currentTimeMillis() - start);
 
 		// Provide semantic tokens - GDSL symbols are injected before LSP transmission
 		return CompletableFuture.completedFuture(semanticTokensProvider.provideFull(textDocument));
@@ -369,24 +342,24 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	@Override
 	public CompletableFuture<Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>>> symbol(
-			WorkspaceSymbolParams params) {
-		WorkspaceSymbolProvider provider = new WorkspaceSymbolProvider(astVisitor);
+			final WorkspaceSymbolParams params) {
+		final var provider = new WorkspaceSymbolProvider(astVisitor);
 		return provider.provideWorkspaceSymbols(params.getQuery());
 	}
 
 	@Override
-	public CompletableFuture<WorkspaceEdit> rename(RenameParams params) {
-		RenameProvider provider = new RenameProvider(astVisitor, fileContentsTracker);
+	public CompletableFuture<WorkspaceEdit> rename(final RenameParams params) {
+		final var provider = new RenameProvider(astVisitor, fileContentsTracker);
 		return provider.provideRename(params);
 	}
 
 	// --- INTERNAL
 
-	private SourceUnit findSourceUnit(URI uri) {
+	private SourceUnit findSourceUnit(final URI uri) {
 		if (compilationUnit == null) {
 			return null;
 		}
-		final SourceUnit[] result = new SourceUnit[1];
+		final var result = new SourceUnit[1];
 		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
 			if (uri.equals(sourceUnit.getSource().getURI())) {
 				result[0] = sourceUnit;
@@ -395,15 +368,15 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		return result[0];
 	}
 
-	private SourceUnit installSpeculativeSource(URI uri, String originalSource, Position position,
-			String placeholder, SourceUnit originalSourceUnit) {
+	private SourceUnit installSpeculativeSource(final URI uri, final String originalSource, final Position position,
+			final String placeholder, final SourceUnit originalSourceUnit) {
 		if (originalSource == null || originalSourceUnit == null || compilationUnit == null) {
 			return null;
 		}
-		int offset = Positions.getOffset(originalSource, position);
-		String speculativeSource = originalSource.substring(0, offset) + placeholder
+		final var offset = Positions.getOffset(originalSource, position);
+		final var speculativeSource = originalSource.substring(0, offset) + placeholder
 				+ originalSource.substring(offset);
-		SourceUnit speculativeSourceUnit = new SourceUnit(Paths.get(uri).toString(),
+		final var speculativeSourceUnit = new SourceUnit(Paths.get(uri).toString(),
 				new StringReaderSourceWithURI(speculativeSource, uri, compilationUnit.getConfiguration()),
 				compilationUnit.getConfiguration(), compilationUnit.getClassLoader(),
 				compilationUnit.getErrorCollector());
@@ -414,7 +387,8 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		return speculativeSourceUnit;
 	}
 
-	private void restoreSpeculativeSource(URI uri, SourceUnit originalSourceUnit, SourceUnit speculativeSourceUnit) {
+	private void restoreSpeculativeSource(final URI uri, final SourceUnit originalSourceUnit,
+			final SourceUnit speculativeSourceUnit) {
 		if (compilationUnit == null || speculativeSourceUnit == null) {
 			return;
 		}
@@ -426,12 +400,12 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	private void compileSpeculative() {
 		try {
 			compilationUnit.compile(Phases.CANONICALIZATION);
-		} catch (CompilationFailedException e) {
+		} catch (final CompilationFailedException e) {
 			// The placeholder is only a code-intelligence aid; syntax errors are expected.
-		} catch (GroovyBugError e) {
+		} catch (final GroovyBugError e) {
 			System.err.println("Unexpected exception in speculative Groovy compilation.");
 			e.printStackTrace(System.err);
-		} catch (Exception e) {
+		} catch (final Exception e) {
 			System.err.println("Unexpected exception in speculative Groovy compilation.");
 			e.printStackTrace(System.err);
 		}
@@ -441,25 +415,25 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	 * Resolves a Maven package using the user's home ~/.m2 repository and returns a
 	 * list of absolute JAR paths.
 	 */
-	public static List<String> downloadToDefaultM2(String coords, String remoteRepoUrl) throws Exception {
+	public static List<String> downloadToDefaultM2(final String coords, final String remoteRepoUrl) throws Exception {
 		// 1. Initialize engines
-		DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
+		final var locator = MavenRepositorySystemUtils.newServiceLocator();
 		locator.addService(RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class);
 		locator.addService(TransporterFactory.class, HttpTransporterFactory.class);
-		RepositorySystem system = locator.getService(RepositorySystem.class);
+		final var system = locator.getService(RepositorySystem.class);
 
 		// 2. Point strictly to the global user home ~/.m2/repository
-		DefaultRepositorySystemSession session = MavenRepositorySystemUtils.newSession();
-		File m2Home = new File(System.getProperty("user.home"), ".m2/repository");
-		LocalRepository localRepo = new LocalRepository(m2Home);
+		final var session = MavenRepositorySystemUtils.newSession();
+		final var m2Home = new File(System.getProperty("user.home"), ".m2/repository");
+		final var localRepo = new LocalRepository(m2Home);
 		session.setLocalRepositoryManager(system.newLocalRepositoryManager(session, localRepo));
 
 		// Fix org.jenkins-ci.plugins:artifactory depending on the JAR artifact of
 		// org.codehaus.groovy:groovy-all by excluding it.
 		// In your `groovy.dependencies` I recommend installing org.apache.groovy:groovy
 		// instead
-		Exclusion groovyAllExclusion = new Exclusion("org.codehaus.groovy", "groovy-all", "*", "*");
-		DependencySelector customExclusion = new ExclusionDependencySelector(Collections.singleton(groovyAllExclusion));
+		final var groovyAllExclusion = new Exclusion("org.codehaus.groovy", "groovy-all", "*", "*");
+		final var customExclusion = new ExclusionDependencySelector(Collections.singleton(groovyAllExclusion));
 
 		// Combine your rule with standard Maven logic (optional deps handling, scope
 		// filtering, etc.)
@@ -468,19 +442,19 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 				customExclusion));
 
 		// 3. Define artifact details
-		Artifact artifact = new DefaultArtifact(coords);
-		Dependency dependency = new Dependency(artifact, "runtime");
-		RemoteRepository remoteRepo = new RemoteRepository.Builder("custom-repo", "default", remoteRepoUrl).build();
+		final var artifact = new DefaultArtifact(coords);
+		final var dependency = new Dependency(artifact, "runtime");
+		final var remoteRepo = new RemoteRepository.Builder("custom-repo", "default", remoteRepoUrl).build();
 
 		// 4. Assemble requests
-		CollectRequest collectRequest = new CollectRequest();
+		final var collectRequest = new CollectRequest();
 		collectRequest.setRoot(dependency);
 		collectRequest.setRepositories(Collections.singletonList(remoteRepo));
 
-		DependencyRequest dependencyRequest = new DependencyRequest();
+		final var dependencyRequest = new DependencyRequest();
 		dependencyRequest.setCollectRequest(collectRequest);
 
-		DependencyResult result = system.resolveDependencies(session, dependencyRequest);
+		final var result = system.resolveDependencies(session, dependencyRequest);
 
 		// 5. Gather and return absolute paths for found runtime JAR files safely
 		return result.getArtifactResults().stream()
@@ -515,7 +489,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	}
 
 	// This is run on EVERY CHANGE to EVERY GROOVY FILE in the workspace.
-	private void visitAST(Set<URI> uris) {
+	private void visitAST(final Set<URI> uris) {
 		if (astVisitor == null) {
 			visitAST();
 			return;
@@ -542,20 +516,20 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		runStaticTypeChecking();
 	}
 
-	private void installDependencies(JsonObject dependencies) {
-		for (Map.Entry<String, JsonElement> entry : dependencies.entrySet()) {
-			String repositoryUrl = entry.getKey();
+	private void installDependencies(final JsonObject dependencies) {
+		for (final var entry : dependencies.entrySet()) {
+			final var repositoryUrl = entry.getKey();
 			if (!entry.getValue().isJsonArray())
 				continue;
 			System.err.println("Installing Maven dependencies from " + repositoryUrl);
-			for (JsonElement dep : entry.getValue().getAsJsonArray()) {
+			for (final var dep : entry.getValue().getAsJsonArray()) {
 				if (!dep.isJsonPrimitive())
 					continue;
-				String depString = dep.getAsString();
+				final var depString = dep.getAsString();
 				try {
 					System.err.println("Resolving dependency " + depString);
 					dependencyClasspaths.addAll(downloadToDefaultM2(depString, repositoryUrl));
-				} catch (Exception e) {
+				} catch (final Exception e) {
 					e.printStackTrace();
 				}
 			}
@@ -565,12 +539,12 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	private boolean createOrUpdateCompilationUnit() {
 		if (compilationUnit != null) {
-			File targetDirectory = compilationUnit.getConfiguration().getTargetDirectory();
+			final var targetDirectory = compilationUnit.getConfiguration().getTargetDirectory();
 			if (targetDirectory != null && targetDirectory.exists()) {
 				try {
 					Files.walk(targetDirectory.toPath()).sorted(Comparator.reverseOrder()).map(Path::toFile)
 							.forEach(File::delete);
-				} catch (IOException e) {
+				} catch (final IOException e) {
 					System.err.println("Failed to delete target directory: " + targetDirectory.getAbsolutePath());
 					compilationUnit = null;
 					return false;
@@ -578,16 +552,16 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 			}
 		}
 
-		GroovyLSCompilationUnit oldCompilationUnit = compilationUnit;
+		final var oldCompilationUnit = compilationUnit;
 		compilationUnit = compilationUnitFactory.create(workspaceRoot, fileContentsTracker);
 		fileContentsTracker.resetChangedFiles();
 
 		if (compilationUnit != null) {
-			File targetDirectory = compilationUnit.getConfiguration().getTargetDirectory();
+			final var targetDirectory = compilationUnit.getConfiguration().getTargetDirectory();
 			if (targetDirectory != null && !targetDirectory.exists() && !targetDirectory.mkdirs()) {
 				System.err.println("Failed to create target directory: " + targetDirectory.getAbsolutePath());
 			}
-			GroovyClassLoader newClassLoader = compilationUnit.getClassLoader();
+			final var newClassLoader = compilationUnit.getClassLoader();
 			if (!newClassLoader.equals(classLoader)) {
 				classLoader = newClassLoader;
 
@@ -595,7 +569,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 					classGraphScanResult = new ClassGraph().overrideClassLoaders(classLoader).enableClassInfo()
 							.enableSystemJarsAndModules()
 							.scan();
-				} catch (ClassGraphException e) {
+				} catch (final ClassGraphException e) {
 					classGraphScanResult = null;
 				}
 			}
@@ -606,20 +580,15 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		return compilationUnit != null && compilationUnit.equals(oldCompilationUnit);
 	}
 
-	private void compileAndVisitAST(URI contextURI) {
-		// System.out.printf("compileAndVisitAST: contextURI='%s'\n", contextURI);
-		Set<URI> uris = Collections.singleton(contextURI);
-		boolean isSameUnit = createOrUpdateCompilationUnit();
-		// var start = System.currentTimeMillis();
+	private void compileAndVisitAST(final URI contextURI) {
+		final var uris = Collections.singleton(contextURI);
+		final var isSameUnit = createOrUpdateCompilationUnit();
 		compile();
-		// System.out.printf("compileAndVisitAST: compile runtime: %sms\n", System.currentTimeMillis() - start);
-		// start = System.currentTimeMillis();
 		if (isSameUnit) {
 			visitAST(uris);
 		} else {
 			visitAST();
 		}
-		// System.out.printf("compileAndVisitAST: visitAST runtime: %sms\n", System.currentTimeMillis() - start);
 	}
 
 	private void compile() {
@@ -631,16 +600,16 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 			// for code intelligence, we shouldn't need to go further
 			// http://groovy-lang.org/metaprogramming.html#_compilation_phases_guide
 			compilationUnit.compile(Phases.CANONICALIZATION);
-		} catch (CompilationFailedException e) {
+		} catch (final CompilationFailedException e) {
 			// ignore
-		} catch (GroovyBugError e) {
+		} catch (final GroovyBugError e) {
 			System.err.println("Unexpected exception in language server when compiling Groovy.");
 			e.printStackTrace(System.err);
-		} catch (Exception e) {
+		} catch (final Exception e) {
 			System.err.println("Unexpected exception in language server when compiling Groovy.");
 			e.printStackTrace(System.err);
 		}
-		Set<PublishDiagnosticsParams> diagnostics = handleErrorCollector(compilationUnit.getErrorCollector());
+		final var diagnostics = handleErrorCollector(compilationUnit.getErrorCollector());
 		diagnostics.stream().forEach(languageClient::publishDiagnostics);
 	}
 
@@ -664,36 +633,37 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		});
 	}
 
-	private Set<PublishDiagnosticsParams> handleErrorCollector(ErrorCollector collector) {
-		Map<URI, List<Diagnostic>> diagnosticsByFile = new HashMap<>();
+	private Set<PublishDiagnosticsParams> handleErrorCollector(final ErrorCollector collector) {
+		final var diagnosticsByFile = new HashMap<URI, List<Diagnostic>>();
 
-		List<? extends Message> errors = collector.getErrors();
+		final var errors = collector.getErrors();
 		if (errors != null) {
-			errors.stream().filter((Object message) -> message instanceof SyntaxErrorMessage)
-					.forEach((Object message) -> {
-						SyntaxErrorMessage syntaxErrorMessage = (SyntaxErrorMessage) message;
-						SyntaxException cause = syntaxErrorMessage.getCause();
-						Range range = GroovyLanguageServerUtils.syntaxExceptionToRange(cause);
-						if (range == null) {
-							// range can't be null in a Diagnostic, so we need
-							// a fallback
-							range = new Range(new Position(0, 0), new Position(0, 0));
-						}
-						Diagnostic diagnostic = new Diagnostic();
-						diagnostic.setRange(range);
-						diagnostic.setSeverity(cause.isFatal() ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning);
-						diagnostic.setMessage(cause.getMessage());
-						URI uri = Paths.get(cause.getSourceLocator()).toUri();
-						diagnosticsByFile.computeIfAbsent(uri, (key) -> new ArrayList<>()).add(diagnostic);
-					});
+			for (final var message : errors) {
+				// TODO: also publish non-syntax-error diagnostics
+				if (!(message instanceof final SyntaxErrorMessage syntaxErrorMessage))
+					continue;
+				final var cause = syntaxErrorMessage.getCause();
+				var range = GroovyLanguageServerUtils.syntaxExceptionToRange(cause);
+				if (range == null) {
+					// range can't be null in a Diagnostic, so we need
+					// a fallback
+					range = new Range(new Position(0, 0), new Position(0, 0));
+				}
+				final var diagnostic = new Diagnostic();
+				diagnostic.setRange(range);
+				diagnostic.setSeverity(cause.isFatal() ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning);
+				diagnostic.setMessage(cause.getMessage());
+				final var uri = Paths.get(cause.getSourceLocator()).toUri();
+				diagnosticsByFile.computeIfAbsent(uri, (key) -> new ArrayList<>()).add(diagnostic);
+			}
 		}
 
-		Set<PublishDiagnosticsParams> result = diagnosticsByFile.entrySet().stream()
+		final var result = diagnosticsByFile.entrySet().stream()
 				.map(entry -> new PublishDiagnosticsParams(entry.getKey().toString(), entry.getValue()))
 				.collect(Collectors.toSet());
 
 		if (prevDiagnosticsByFile != null) {
-			for (URI key : prevDiagnosticsByFile.keySet()) {
+			for (final var key : prevDiagnosticsByFile.keySet()) {
 				if (!diagnosticsByFile.containsKey(key)) {
 					// send an empty list of diagnostics for files that had
 					// diagnostics previously or they won't be cleared
