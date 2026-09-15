@@ -1,5 +1,7 @@
 # groovyls
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/trustytrojan/groovyls)
+
 This is a fork of [GroovyLanguageServer/groovy-language-server](/GroovyLanguageServer/groovy-language-server) that adds:
 
 - Jenkins pipeline step function support via parsing of GDSL files created by Jenkins instances.
