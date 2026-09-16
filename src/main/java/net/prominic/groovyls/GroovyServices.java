@@ -280,7 +280,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
 			final DefinitionParams params) {
 		final var provider = new DefinitionProvider(astVisitor);
-		return provider.provideDefinition(params.getTextDocument(), params.getPosition());
+		return provider.provideDefinition(params.getTextDocument(), params.getPosition(), fileContentsTracker);
 	}
 
 	@Override

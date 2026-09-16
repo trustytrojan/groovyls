@@ -1,5 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright 2022 Prominic.NET, Inc.
+// Copyright 2026 trustytrojan
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,12 +15,12 @@
 // limitations under the License
 //
 // Author: Prominic.NET, Inc.
+// Author: trustytrojan
 // No warranty of merchantability or fitness of any kind.
 // Use this software at your own risk.
 ////////////////////////////////////////////////////////////////////////////////
 package net.prominic.groovyls.util;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -32,15 +33,12 @@ import java.util.Set;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
-import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
 import net.prominic.lsp.utils.Positions;
 
 public class FileContentsTracker {
-
-	private Map<URI, String> openFiles = new HashMap<>();
-	private Set<URI> changedFiles = new HashSet<>();
+	private final Map<URI, String> openFiles = new HashMap<>();
+	private final Set<URI> changedFiles = new HashSet<>();
 
 	public Set<URI> getOpenURIs() {
 		return openFiles.keySet();
@@ -51,74 +49,57 @@ public class FileContentsTracker {
 	}
 
 	public void resetChangedFiles() {
-		changedFiles = new HashSet<>();
+		changedFiles.clear();
 	}
 
-	public void forceChanged(URI uri) {
+	public void forceChanged(final URI uri) {
 		changedFiles.add(uri);
 	}
 
-	public boolean isOpen(URI uri) {
+	public boolean isOpen(final URI uri) {
 		return openFiles.containsKey(uri);
 	}
 
-	public void didOpen(DidOpenTextDocumentParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
+	public void didOpen(final DidOpenTextDocumentParams params) {
+		final var uri = URI.create(params.getTextDocument().getUri());
 		openFiles.put(uri, params.getTextDocument().getText());
 		changedFiles.add(uri);
 	}
 
-	public void didChange(DidChangeTextDocumentParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
-		String oldText = openFiles.get(uri);
-		TextDocumentContentChangeEvent change = params.getContentChanges().get(0);
-		Range range = change.getRange();
+	public void didChange(final DidChangeTextDocumentParams params) {
+		final var uri = URI.create(params.getTextDocument().getUri());
+		final var oldText = openFiles.get(uri);
+		final var change = params.getContentChanges().get(0);
+		final var range = change.getRange();
 		if (range == null) {
 			openFiles.put(uri, change.getText());
 		} else {
-			int offsetStart = Positions.getOffset(oldText, change.getRange().getStart());
-			int offsetEnd = Positions.getOffset(oldText, change.getRange().getEnd());
-			StringBuilder builder = new StringBuilder();
-			builder.append(oldText.substring(0, offsetStart));
-			builder.append(change.getText());
-			builder.append(oldText.substring(offsetEnd));
-			openFiles.put(uri, builder.toString());
+			final var offsetStart = Positions.getOffset(oldText, change.getRange().getStart());
+			final var offsetEnd = Positions.getOffset(oldText, change.getRange().getEnd());
+			final var content = oldText.substring(0, offsetStart) + change.getText() + oldText.substring(offsetEnd);
+			openFiles.put(uri, content);
 		}
 		changedFiles.add(uri);
 	}
 
-	public void didClose(DidCloseTextDocumentParams params) {
-		URI uri = URI.create(params.getTextDocument().getUri());
+	public void didClose(final DidCloseTextDocumentParams params) {
+		final var uri = URI.create(params.getTextDocument().getUri());
 		openFiles.remove(uri);
 		changedFiles.add(uri);
 	}
 
-	public String getContents(URI uri) {
+	public String getContents(final URI uri) {
 		if (!openFiles.containsKey(uri)) {
-			BufferedReader reader = null;
 			try {
-				reader = Files.newBufferedReader(Paths.get(uri));
-				StringBuilder builder = new StringBuilder();
-				int next = -1;
-				while ((next = reader.read()) != -1) {
-					builder.append((char) next);
-				}
-				return builder.toString();
-			} catch (IOException e) {
+				return Files.readString(Paths.get(uri));
+			} catch (final IOException e) {
 				return null;
-			} finally {
-				if (reader != null) {
-					try {
-						reader.close();
-					} catch (IOException e) {
-					}
-				}
 			}
 		}
 		return openFiles.get(uri);
 	}
 
-	public void setContents(URI uri, String contents) {
+	public void setContents(final URI uri, final String contents) {
 		openFiles.put(uri, contents);
 	}
 }

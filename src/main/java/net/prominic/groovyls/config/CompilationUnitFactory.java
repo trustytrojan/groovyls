@@ -71,7 +71,11 @@ public class CompilationUnitFactory implements ICompilationUnitFactory {
 		}
 
 		if (classLoader == null) {
-			classLoader = new GroovyClassLoader(ClassLoader.getSystemClassLoader().getParent(), config, true);
+			// Don't use ClassLoader.getSystemClassLoader().getParent() as the parent
+			// because `org.apache.groovy` classes, which are already loaded into the system
+			// class loader, are needed to process Groovy files. This prevents users from
+			// needing to add `org.apache.groovy` in the `groovy.dependencies` setting.
+			classLoader = new GroovyClassLoader(ClassLoader.getSystemClassLoader(), config, true);
 		}
 
 		Set<URI> changedUris = fileContentsTracker.getChangedURIs();

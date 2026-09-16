@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import org.codehaus.groovy.ast.ASTNode;
+import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
@@ -140,11 +141,7 @@ public class SemanticTokensProvider {
 		return new Token(startLine, startChar, endChar - startChar, type, modifiers);
 	}
 
-	public static void debugPrint(final ASTNode expr, final String text) {
-		if (expr instanceof final Expression e && e.isSynthetic()) {
-			return;
-		}
-
+	public static void debugPrint(final ASTNode expr, final FileContentsTracker fct, final ASTNodeVisitor ast) {
 		System.err.printf("debugPrint: %s\n  text: '%s'\n", expr, expr.getText());
 
 		if (expr.getNodeMetaData("groovyls-original-inferred-type") instanceof final ClassNode cn) {
@@ -171,6 +168,10 @@ public class SemanticTokensProvider {
 			System.err.printf("  readonly_property: %s\n", b);
 		}
 
+		if (expr instanceof final AnnotatedNode an) {
+			System.err.printf("  is_synthetic: %s\b", an.isSynthetic());
+		}
+
 		if (expr instanceof final Expression e) {
 			System.err.printf("  type: %s\n", e.getType());
 		} else if (expr instanceof final Variable v) {
@@ -192,14 +193,33 @@ public class SemanticTokensProvider {
 					v.isDynamicTyped());
 		}
 
-		if (expr instanceof final MethodNode me) {
-			System.err.printf("  return_type: %s\n", me.getReturnType());
+		if (expr instanceof final MethodNode mn) {
+			System.err.printf("  return_type: %s\n", mn.getReturnType());
 		}
 
-		if (text != null) {
-			final var r = GroovyLanguageServerUtils.astNodeToRange(expr);
-			if (r != null)
-				System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(text, r));
+		if (ast != null) {
+			final var uri = ast.getURI(expr);
+			if (uri != null) {
+				System.err.printf("  uri: '%s'\n", uri);
+			}
+
+			final var range = GroovyLanguageServerUtils.astNodeToRange(expr);
+			if (range != null) {
+				System.err.printf("  range: %s\n", range);
+				if (fct != null && uri != null) {
+					final var contents = fct.getContents(uri);
+					if (contents != null)
+						System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(contents, range));
+				}
+			}
+
+			if (expr instanceof ConstantExpression) {
+				final var parent = ast.getParent(expr);
+				if (parent instanceof MethodCallExpression || parent instanceof PropertyExpression) {
+					System.err.print("parent of ConstantExpression: ");
+					debugPrint(parent, fct, ast);
+				}
+			}
 		}
 	}
 

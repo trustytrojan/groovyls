@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.ClassNode;
@@ -48,6 +49,7 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
+import org.codehaus.groovy.ast.tools.ParameterUtils;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -113,27 +115,44 @@ public class GroovyASTUtils {
             return tryToResolveOriginalClassNode(ce.getType(), strict, astVisitor);
         } else if (node instanceof final ImportNode in) {
             return tryToResolveOriginalClassNode(in.getType(), strict, astVisitor);
-        } else if (node instanceof MethodNode) {
-            return node;
+        } else if (node instanceof final MethodNode mn) {
+            if (mn.isSynthetic()) {
+                // This method may be a generated overload for an in-source method with default
+                // parameter values.
+                // Return the method whose non-default parameters match this method's
+                // parameters, if found.
+                for (final var method : mn.getDeclaringClass().getMethods(mn.getName())) {
+                    if (!method.hasDefaultValue())
+                        continue;
+                    final var nonDefaultParams = Stream.of(method.getParameters())
+                            .filter(p -> !p.hasInitialExpression())
+                            .toArray(Parameter[]::new);
+                    if (ParameterUtils.parametersEqual(mn.getParameters(), nonDefaultParams))
+                        return method;
+                }
+            }
+            return mn;
         } else if (node instanceof ConstantExpression && parentNode != null) {
             if (parentNode instanceof final MethodCallExpression mce) {
+                final MethodNode definition;
+
                 // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata when it finds a
                 // matching method.
                 // Use pattern matching here because we need to return an ASTNode.
                 // It is expected that the STC fills in DIRECT_METHOD_CALL_TARGET with a
                 // MethodNode, so we pattern match for it.
                 if (mce.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
-                    return mn;
+                    definition = mn;
+                else if (mce.getMethodTarget() != null)
+                    definition = mce.getMethodTarget();
+                else
+                    definition = GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
 
-                final var methodTarget = mce.getMethodTarget();
-                if (methodTarget != null)
-                    return methodTarget;
-
-                return GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
+                return getDefinition(definition, strict, astVisitor);
             } else if (parentNode instanceof final PropertyExpression pe) {
                 // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata for
                 // PropertyExpressions where a matching getter is available.
-                // For example: `new Object().class` calls `Object.getClass()`.
+                // For example: `new Object().class` calls `Object#getClass()`.
                 // Use pattern matching here because we need to return an ASTNode.
                 // It is expected that the STC fills in DIRECT_METHOD_CALL_TARGET with a
                 // MethodNode, so we pattern match for it.
