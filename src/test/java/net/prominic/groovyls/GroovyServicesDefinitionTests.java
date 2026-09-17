@@ -483,6 +483,59 @@ class GroovyServicesDefinitionTests {
 		}
 	}
 
+	@Test
+	void testCallsOfMemberMethodWithDefaultParameterValues() throws Exception {
+		final var uri = srcRoot.resolve("Definitions.groovy").toUri().toString();
+		final var contents = """
+				def func(boolean x, int y = 0, String z = '') {}
+				func(true)
+				func(true, 0)
+				func(true, 0, '')
+				""";
+		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents);
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
+		final var textDocument = new TextDocumentIdentifier(uri);
+
+		{
+			final var position = new Position(1, 2);
+			final var locations = services.definition(new DefinitionParams(textDocument, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri, location.getUri());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(48, location.getRange().getEnd().getCharacter());
+		}
+
+		{
+			final var position = new Position(2, 2);
+			final var locations = services.definition(new DefinitionParams(textDocument, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri, location.getUri());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(48, location.getRange().getEnd().getCharacter());
+		}
+
+		{
+			final var position = new Position(3, 2);
+			final var locations = services.definition(new DefinitionParams(textDocument, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri, location.getUri());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(48, location.getRange().getEnd().getCharacter());
+		}
+	}
+
 	// --- classes
 
 	@Test

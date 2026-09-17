@@ -26,7 +26,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.ClassNode;
@@ -49,7 +48,6 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
-import org.codehaus.groovy.ast.tools.ParameterUtils;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -121,14 +119,17 @@ public class GroovyASTUtils {
                 // parameter values.
                 // Return the method whose non-default parameters match this method's
                 // parameters, if found.
-                for (final var method : mn.getDeclaringClass().getMethods(mn.getName())) {
+                nextMethod: for (final var method : mn.getDeclaringClass().getMethods(mn.getName())) {
                     if (!method.hasDefaultValue())
                         continue;
-                    final var nonDefaultParams = Stream.of(method.getParameters())
-                            .filter(p -> !p.hasInitialExpression())
-                            .toArray(Parameter[]::new);
-                    if (ParameterUtils.parametersEqual(mn.getParameters(), nonDefaultParams))
-                        return method;
+                    final var params1 = mn.getParameters();
+                    final var params2 = method.getParameters();
+                    final var lengthToCheck = Math.min(params1.length, params2.length);
+                    for (var i = 0; i < lengthToCheck; ++i) {
+                        if (!params1[i].getType().equals(params2[i].getType()))
+                            continue nextMethod;
+                    }
+                    return method;
                 }
             }
             return mn;
