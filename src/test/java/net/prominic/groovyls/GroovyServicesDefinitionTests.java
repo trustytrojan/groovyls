@@ -21,6 +21,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 package net.prominic.groovyls;
 
+import java.io.File;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -97,6 +99,11 @@ class GroovyServicesDefinitionTests {
 
 	@AfterEach
 	void tearDown() {
+		try {
+			Files.walk(srcRoot).map(Path::toFile).forEach(File::delete);
+		} catch (final IOException e) {
+			e.printStackTrace();
+		}
 		services = null;
 		workspaceRoot = null;
 		srcRoot = null;
@@ -311,33 +318,68 @@ class GroovyServicesDefinitionTests {
 	}
 
 	@Test
-	void testMemberMethodDefinitionFromCall_crossFile_File1Closed() throws Exception {
+	void testMemberMethodDefinitionFromCall_crossFile1() throws Exception {
 		final var uri1 = srcRoot.resolve("File1.groovy").toUri().normalize();
 		final var contents1 = "def func() {}";
 		Files.writeString(Paths.get(uri1), contents1);
 
-		final var uri2 = srcRoot.resolve("File2.groovy").toUri().toString();
+		final var uri2 = srcRoot.resolve("File2.groovy").toUri().normalize();
 		final var contents2 = "File1.func()";
-		final var textDocumentItem2 = new TextDocumentItem(uri2, LANGUAGE_GROOVY, 1, contents2);
+		final var textDocumentItem2 = new TextDocumentItem(uri2.toString(), LANGUAGE_GROOVY, 1, contents2);
 		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem2));
-		final var textDocument2 = new TextDocumentIdentifier(uri2);
+		final var textDocument2 = new TextDocumentIdentifier(uri2.toString());
 
-		final var position = new Position(0, 7);
-		final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
-				.getLeft();
-		Assertions.assertEquals(1, locations.size());
-		final var location = locations.get(0);
-		Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
-		Assertions.assertEquals(0, location.getRange().getStart().getLine());
-		Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
-		Assertions.assertEquals(0, location.getRange().getEnd().getLine());
-		Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		final URI openedFileUri;
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, openedFileUri = URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
+
+		// Simulate an editor opening the file containing the located symbol
+		// It was already asserted that it is File1.groovy
+		final var textDocumentItem1 = new TextDocumentItem(openedFileUri.toString(), LANGUAGE_GROOVY, 1, contents1);
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem1));
+
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
+
+		services.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(textDocumentItem1.getUri())));
+
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
 	}
 
 	@Test
-	void testMemberMethodDefinitionFromCall_crossFile_afterFile1Closed() throws Exception {
+	void testMemberMethodDefinitionFromCall_crossFile2() throws Exception {
 		final var uri1 = srcRoot.resolve("File1.groovy").toUri().normalize();
-		Files.deleteIfExists(Paths.get(uri1));
 		final var contents1 = "def func() {}";
 		final var textDocumentItem1 = new TextDocumentItem(uri1.toString(), LANGUAGE_GROOVY, 1, contents1);
 		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem1));
@@ -349,18 +391,99 @@ class GroovyServicesDefinitionTests {
 		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem2));
 		final var textDocument2 = new TextDocumentIdentifier(uri2);
 
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
+
 		services.didClose(new DidCloseTextDocumentParams(textDocument1));
 
-		final var position = new Position(0, 7);
-		final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
-				.getLeft();
-		Assertions.assertEquals(1, locations.size());
-		final var location = locations.get(0);
-		Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
-		Assertions.assertEquals(0, location.getRange().getStart().getLine());
-		Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
-		Assertions.assertEquals(0, location.getRange().getEnd().getLine());
-		Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		final URI openedFileUri;
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, openedFileUri = URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
+
+		// Simulate an editor opening the file containing the located symbol
+		// It was already asserted that it is File1.groovy
+		textDocumentItem1.setUri(openedFileUri.toString());
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem1));
+
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
+	}
+
+	@Test
+	void testMemberMethodDefinitionFromCall_crossFile3() throws Exception {
+		var uri1 = srcRoot.resolve("File1.groovy").toUri().normalize();
+		final var contents1 = "def func() {}";
+		final var textDocumentItem1 = new TextDocumentItem(uri1.toString(), LANGUAGE_GROOVY, 1, contents1);
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem1));
+		final var textDocument1 = new TextDocumentIdentifier(uri1.toString());
+
+		final var uri2 = srcRoot.resolve("File2.groovy").toUri().toString();
+		final var contents2 = "File1.func()";
+		final var textDocumentItem2 = new TextDocumentItem(uri2, LANGUAGE_GROOVY, 1, contents2);
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem2));
+		final var textDocument2 = new TextDocumentIdentifier(uri2);
+
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
+
+		// Simulate moving File1 into a folder while it is open in the editor
+		services.didClose(new DidCloseTextDocumentParams(textDocument1));
+		uri1 = srcRoot.resolve("folder/File1.groovy").toUri().normalize();
+		textDocumentItem1.setUri(uri1.toString());
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem1));
+
+		{
+			final var position = new Position(0, 7);
+			final var locations = services.definition(new DefinitionParams(textDocument2, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri1, URI.create(location.getUri()).normalize());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(13, location.getRange().getEnd().getCharacter());
+		}
 	}
 
 	// --- classes

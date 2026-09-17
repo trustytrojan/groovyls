@@ -11,6 +11,10 @@ java {
 
 test {
   useJUnitPlatform()
+  testLogging {
+    exceptionFormat = 'full'
+  }
+
   def outputCache = new StringBuilder()
 
   onOutput { descriptor, event ->

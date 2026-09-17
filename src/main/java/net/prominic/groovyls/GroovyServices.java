@@ -113,7 +113,7 @@ import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.ast.MySTCVisitor;
 import net.prominic.groovyls.compiler.control.GroovyLSCompilationUnit;
 import net.prominic.groovyls.compiler.control.io.StringReaderSourceWithURI;
-import net.prominic.groovyls.config.ICompilationUnitFactory;
+import net.prominic.groovyls.config.CompilationUnitFactory;
 import net.prominic.groovyls.gdsl.GdslSymbolsManager;
 import net.prominic.groovyls.providers.CompletionProvider;
 import net.prominic.groovyls.providers.DefinitionProvider;
@@ -135,7 +135,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	private LanguageClient languageClient;
 
 	private Path workspaceRoot;
-	private ICompilationUnitFactory compilationUnitFactory;
+	private CompilationUnitFactory compilationUnitFactory;
 	private GroovyLSCompilationUnit compilationUnit;
 	private ASTNodeVisitor astVisitor;
 	private Map<URI, List<Diagnostic>> prevDiagnosticsByFile;
@@ -146,7 +146,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	private SemanticTokensProvider semanticTokensProvider = null;
 	private final Set<String> dependencyClasspaths = new HashSet<>();
 
-	public GroovyServices(final ICompilationUnitFactory factory) {
+	public GroovyServices(final CompilationUnitFactory factory) {
 		compilationUnitFactory = factory;
 	}
 
@@ -165,14 +165,37 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	@Override
 	public void didOpen(final DidOpenTextDocumentParams params) {
+		final var uri = URI.create(params.getTextDocument().getUri());
+		final var textDocument = params.getTextDocument();
+		final var newText = textDocument.getText();
+
+		final var existingSourceUnit = findSourceUnit(uri);
+		final var previousContents = fileContentsTracker.getLastContents(uri);
+
 		fileContentsTracker.didOpen(params);
-		compileAndVisitAST(URI.create(params.getTextDocument().getUri()));
+
+		// Short-circuit: Reference check or length check before full text comparison
+		if (existingSourceUnit != null && newText.equals(previousContents)) {
+			fileContentsTracker.clearChanged(uri);
+			return;
+		}
+
+		final var movedSourceUnit = (existingSourceUnit == null)
+				? findSourceUnitWithContents(newText)
+				: null;
+
+		if (movedSourceUnit != null) {
+			((StringReaderSourceWithURI) movedSourceUnit.getSource()).setURI(uri);
+			fileContentsTracker.clearChanged(uri);
+		}
+
+		compileAndVisitAST();
 	}
 
 	@Override
 	public void didChange(final DidChangeTextDocumentParams params) {
 		fileContentsTracker.didChange(params);
-		compileAndVisitAST(URI.create(params.getTextDocument().getUri()));
+		compileAndVisitAST();
 	}
 
 	@Override
@@ -361,6 +384,20 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		final var result = new SourceUnit[1];
 		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
 			if (uri.equals(sourceUnit.getSource().getURI())) {
+				result[0] = sourceUnit;
+			}
+		});
+		return result[0];
+	}
+
+	private SourceUnit findSourceUnitWithContents(final String contents) {
+		if (compilationUnit == null) {
+			return null;
+		}
+		final var result = new SourceUnit[1];
+		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
+			final var sourceURI = sourceUnit.getSource().getURI();
+			if (result[0] == null && contents.equals(fileContentsTracker.getLastContents(sourceURI))) {
 				result[0] = sourceUnit;
 			}
 		});
@@ -581,13 +618,13 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		return compilationUnit != null && compilationUnit.equals(oldCompilationUnit);
 	}
 
-	private void compileAndVisitAST(final URI contextURI) {
-		final var uris = Collections.singleton(contextURI);
+	private void compileAndVisitAST() {
 		final var isSameUnit = createOrUpdateCompilationUnit();
-		compile();
 		if (isSameUnit) {
-			visitAST(uris);
+			compileSpeculative();
+			visitAST();
 		} else {
+			compile();
 			visitAST();
 		}
 	}

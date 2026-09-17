@@ -44,7 +44,6 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
 import net.prominic.groovyls.config.CompilationUnitFactory;
-import net.prominic.groovyls.config.ICompilationUnitFactory;
 import net.prominic.groovyls.providers.SemanticTokensProvider;
 
 public class GroovyLanguageServer implements LanguageServer, LanguageClientAware {
@@ -70,7 +69,7 @@ public class GroovyLanguageServer implements LanguageServer, LanguageClientAware
         this(new CompilationUnitFactory());
     }
 
-    public GroovyLanguageServer(final ICompilationUnitFactory compilationUnitFactory) {
+    public GroovyLanguageServer(final CompilationUnitFactory compilationUnitFactory) {
         this.groovyServices = new GroovyServices(compilationUnitFactory);
     }
 

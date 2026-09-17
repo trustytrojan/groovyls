@@ -39,7 +39,7 @@ import net.prominic.groovyls.compiler.control.GroovyLSCompilationUnit;
 import net.prominic.groovyls.compiler.control.io.StringReaderSourceWithURI;
 import net.prominic.groovyls.util.FileContentsTracker;
 
-public class CompilationUnitFactory implements ICompilationUnitFactory {
+public class CompilationUnitFactory {
 	private static final String FILE_EXTENSION_GROOVY = ".groovy";
 
 	private GroovyLSCompilationUnit compilationUnit;
