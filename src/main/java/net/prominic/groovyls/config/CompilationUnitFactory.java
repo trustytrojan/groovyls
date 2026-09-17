@@ -1,5 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright 2022 Prominic.NET, Inc.
+// Copyright 2026 trustytrojan
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,6 +15,7 @@
 // limitations under the License
 //
 // Author: Prominic.NET, Inc.
+// Author: trustytrojan
 // No warranty of merchantability or fitness of any kind.
 // Use this software at your own risk.
 ////////////////////////////////////////////////////////////////////////////////
@@ -71,43 +73,15 @@ public class CompilationUnitFactory {
 		}
 
 		if (classLoader == null) {
-			// Don't use ClassLoader.getSystemClassLoader().getParent() as the parent
-			// because `org.apache.groovy` classes, which are already loaded into the system
-			// class loader, are needed to process Groovy files. This prevents users from
-			// needing to add `org.apache.groovy` in the `groovy.dependencies` setting.
 			classLoader = new GroovyClassLoader(ClassLoader.getSystemClassLoader(), config, true);
 		}
 
-		Set<URI> changedUris = fileContentsTracker.getChangedURIs();
-		if (compilationUnit == null) {
-			compilationUnit = new GroovyLSCompilationUnit(config, null, classLoader);
-			// we don't care about changed URIs if there's no compilation unit yet
-			changedUris = null;
-		} else {
-			compilationUnit.setClassLoader(classLoader);
-			final Set<URI> urisToRemove = changedUris;
-			List<SourceUnit> sourcesToRemove = new ArrayList<>();
-			compilationUnit.iterator().forEachRemaining(sourceUnit -> {
-				URI uri = sourceUnit.getSource().getURI();
-				if (urisToRemove.contains(uri)) {
-					sourcesToRemove.add(sourceUnit);
-				}
-			});
-			// if an URI has changed, we remove it from the compilation unit so
-			// that a new version can be built from the updated source file
-			compilationUnit.removeSources(sourcesToRemove);
-		}
+		compilationUnit = new GroovyLSCompilationUnit(config, null, classLoader);
 
 		if (workspaceRoot != null) {
-			addDirectoryToCompilationUnit(workspaceRoot, compilationUnit, fileContentsTracker, changedUris);
+			addDirectoryToCompilationUnit(workspaceRoot, compilationUnit, fileContentsTracker, null);
 		} else {
-			final Set<URI> urisToAdd = changedUris;
 			fileContentsTracker.getOpenURIs().forEach(uri -> {
-				// if we're only tracking changes, skip all files that haven't
-				// actually changed
-				if (urisToAdd != null && !urisToAdd.contains(uri)) {
-					return;
-				}
 				String contents = fileContentsTracker.getContents(uri);
 				addOpenFileToCompilationUnit(uri, contents, compilationUnit);
 			});
@@ -174,7 +148,8 @@ public class CompilationUnitFactory {
 					if (!fileContentsTracker.isOpen(fileURI)) {
 						File file = filePath.toFile();
 						if (file.isFile()) {
-							if (changedUris == null || changedUris.contains(fileURI) || !containsSource(compilationUnit, fileURI)) {
+							if (changedUris == null || changedUris.contains(fileURI)
+									|| !containsSource(compilationUnit, fileURI)) {
 								addFileToCompilationUnit(file.toPath(), compilationUnit);
 							}
 						}

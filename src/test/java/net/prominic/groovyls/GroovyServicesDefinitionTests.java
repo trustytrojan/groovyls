@@ -58,6 +58,29 @@ class GroovyServicesDefinitionTests {
 	private Path workspaceRoot;
 	private Path srcRoot;
 
+	private static final LanguageClient DUMMY_LANGUAGE_CLIENT = new LanguageClient() {
+		@Override
+		public void telemetryEvent(Object object) {
+		}
+
+		@Override
+		public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams requestParams) {
+			return null;
+		}
+
+		@Override
+		public void showMessage(MessageParams messageParams) {
+		}
+
+		@Override
+		public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {
+		}
+
+		@Override
+		public void logMessage(MessageParams message) {
+		}
+	};
+
 	@BeforeEach
 	void setup() {
 		workspaceRoot = Paths.get(System.getProperty("user.dir")).resolve(PATH_WORKSPACE);
@@ -68,33 +91,7 @@ class GroovyServicesDefinitionTests {
 
 		services = new GroovyServices(new CompilationUnitFactory());
 		services.setWorkspaceRoot(workspaceRoot);
-		services.connect(new LanguageClient() {
-
-			@Override
-			public void telemetryEvent(Object object) {
-
-			}
-
-			@Override
-			public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams requestParams) {
-				return null;
-			}
-
-			@Override
-			public void showMessage(MessageParams messageParams) {
-
-			}
-
-			@Override
-			public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {
-
-			}
-
-			@Override
-			public void logMessage(MessageParams message) {
-
-			}
-		});
+		services.connect(DUMMY_LANGUAGE_CLIENT);
 	}
 
 	@AfterEach
