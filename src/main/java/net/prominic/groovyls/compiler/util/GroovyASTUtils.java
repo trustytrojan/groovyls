@@ -115,21 +115,53 @@ public class GroovyASTUtils {
             return tryToResolveOriginalClassNode(in.getType(), strict, astVisitor);
         } else if (node instanceof final MethodNode mn) {
             if (mn.isSynthetic()) {
-                // This method may be a generated overload for an in-source method with default
-                // parameter values.
-                // Return the method whose non-default parameters match this method's
-                // parameters, if found.
+                final var params1 = mn.getParameters();
+
                 nextMethod: for (final var method : mn.getDeclaringClass().getMethods(mn.getName())) {
                     if (!method.hasDefaultValue())
                         continue;
-                    final var params1 = mn.getParameters();
+
                     final var params2 = method.getParameters();
-                    final var lengthToCheck = Math.min(params1.length, params2.length);
-                    for (var i = 0; i < lengthToCheck; ++i) {
-                        if (!params1[i].getType().equals(params2[i].getType()))
-                            continue nextMethod;
+                    if (params1.length >= params2.length)
+                        continue;
+
+                    // 1. Count mandatory parameters in the candidate method
+                    var mandatoryCount = 0;
+                    for (final var p : params2) {
+                        if (!p.hasInitialExpression()) {
+                            mandatoryCount++;
+                        }
                     }
-                    return method;
+
+                    // An overload must contain at least all mandatory parameters
+                    if (params1.length < mandatoryCount)
+                        continue;
+
+                    // 2. Groovy keeps all mandatory params + the first N optional params
+                    // (left-to-right)
+                    final var optToKeep = params1.length - mandatoryCount;
+                    int optSeen = 0, idx1 = 0;
+
+                    for (final var p2 : params2) {
+                        if (p2.hasInitialExpression()) {
+                            if (optSeen < optToKeep) {
+                                optSeen++;
+                            } else {
+                                // Skip optional parameters beyond the budget for this overload
+                                continue;
+                            }
+                        }
+
+                        // Compare expected parameter type with synthetic method parameter type
+                        if (idx1 >= params1.length || !params1[idx1].getType().equals(p2.getType())) {
+                            continue nextMethod;
+                        }
+                        idx1++;
+                    }
+
+                    if (idx1 == params1.length) {
+                        return method;
+                    }
                 }
             }
             return mn;
