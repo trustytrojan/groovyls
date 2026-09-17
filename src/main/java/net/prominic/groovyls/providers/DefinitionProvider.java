@@ -69,7 +69,7 @@ public class DefinitionProvider {
 		}
 
 		// System.err.print("provideDefinition: offsetNode: ");
-		// SemanticTokensProvider.debugPrint(definitionNode, fct, ast);
+		// SemanticTokensProvider.debugPrint(offsetNode, fct, ast);
 
 		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, true, ast);
 		if (definitionNode == null) {
