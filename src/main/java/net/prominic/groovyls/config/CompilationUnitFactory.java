@@ -174,14 +174,13 @@ public class CompilationUnitFactory implements ICompilationUnitFactory {
 					if (!fileContentsTracker.isOpen(fileURI)) {
 						File file = filePath.toFile();
 						if (file.isFile()) {
-							if (changedUris == null || changedUris.contains(fileURI)) {
+							if (changedUris == null || changedUris.contains(fileURI) || !containsSource(compilationUnit, fileURI)) {
 								addFileToCompilationUnit(file.toPath(), compilationUnit);
 							}
 						}
 					}
 				});
 			}
-
 		} catch (IOException e) {
 			System.err.println("Failed to walk directory for source files: " + dirPath);
 		}
@@ -196,6 +195,17 @@ public class CompilationUnitFactory implements ICompilationUnitFactory {
 			String contents = fileContentsTracker.getContents(uri);
 			addOpenFileToCompilationUnit(uri, contents, compilationUnit);
 		});
+	}
+
+	private boolean containsSource(GroovyLSCompilationUnit compilationUnit, URI uri) {
+		// Trick to bypass Java's final variable capture restriction
+		final boolean[] result = { false };
+		compilationUnit.iterator().forEachRemaining(sourceUnit -> {
+			if (uri.equals(sourceUnit.getSource().getURI())) {
+				result[0] = true;
+			}
+		});
+		return result[0];
 	}
 
 	protected void addOpenFileToCompilationUnit(URI uri, String contents, GroovyLSCompilationUnit compilationUnit) {

@@ -85,18 +85,16 @@ public class FileContentsTracker {
 	public void didClose(final DidCloseTextDocumentParams params) {
 		final var uri = URI.create(params.getTextDocument().getUri());
 		openFiles.remove(uri);
-		changedFiles.add(uri);
 	}
 
 	public String getContents(final URI uri) {
-		if (!openFiles.containsKey(uri)) {
-			try {
-				return Files.readString(Paths.get(uri));
-			} catch (final IOException e) {
-				return null;
-			}
+		if (openFiles.containsKey(uri))
+			return openFiles.get(uri);
+		try {
+			return Files.readString(Paths.get(uri));
+		} catch (final IOException e) {
+			return null;
 		}
-		return openFiles.get(uri);
 	}
 
 	public void setContents(final URI uri, final String contents) {

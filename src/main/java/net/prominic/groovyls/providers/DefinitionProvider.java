@@ -22,7 +22,6 @@
 package net.prominic.groovyls.providers;
 
 import java.net.URI;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -47,6 +46,13 @@ public class DefinitionProvider {
 		this.ast = ast;
 	}
 
+	private static CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> makeReturnValue(
+			final Location... list) {
+		return CompletableFuture.completedFuture(Either.forLeft(List.of(list)));
+	}
+
+	private static final CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> SENTINEL = makeReturnValue();
+
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> provideDefinition(
 			final TextDocumentIdentifier textDocument,
 			final Position position,
@@ -54,43 +60,48 @@ public class DefinitionProvider {
 		if (ast == null) {
 			// this shouldn't happen, but let's avoid an exception if something
 			// goes terribly wrong.
-			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			return SENTINEL;
 		}
 		final var uri = URI.create(textDocument.getUri());
 		final var offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
-			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			return SENTINEL;
 		}
 
-		// System.out.print("provideDefinition: offsetNode: ");
+		// System.err.print("provideDefinition: offsetNode: ");
 		// SemanticTokensProvider.debugPrint(definitionNode, fct, ast);
 
 		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, true, ast);
 		if (definitionNode == null) {
-			return CompletableFuture.completedFuture(Either.forLeft(Collections.emptyList()));
+			return SENTINEL;
 		}
 
-		// System.out.print("provideDefinition: definitionNode: ");
+		// System.err.print("provideDefinition: definitionNode: ");
 		// SemanticTokensProvider.debugPrint(definitionNode, fct, ast);
 
 		var definitionURI = ast.getURI(definitionNode);
+		if (definitionURI == null) {
+			return SENTINEL;
+		}
 
 		var location = GroovyLanguageServerUtils.astNodeToLocation(definitionNode, definitionURI);
 		if (location == null) {
 			if (definitionNode instanceof final ConstructorNode cn) {
-				// The constructor's class has no explicit constructor. Refer to the entire class.
+				// The constructor's class has no explicit constructor. Refer to the entire
+				// class.
 				definitionNode = cn.getDeclaringClass();
 				definitionURI = ast.getURI(definitionNode);
 			}
 			if (definitionNode instanceof ClassNode) {
-				// For some reason, ClassNodes of script classes (no explicit class body) have no range information.
+				// For some reason, ClassNodes of script classes (no explicit class body) have
+				// no range information.
 				// Refer to the script file in the simplest way possible.
-				location = new Location(definitionURI.toString(), new Range(new Position(), new Position(1, 1)));
-				return CompletableFuture.completedFuture(Either.forLeft(List.of(location)));
+				location = new Location(definitionURI.toString(), new Range(new Position(), new Position(0, 1)));
+				return makeReturnValue(location);
 			}
-			return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+			return SENTINEL;
 		}
 
-		return CompletableFuture.completedFuture(Either.forLeft(List.of(location)));
+		return makeReturnValue(location);
 	}
 }

@@ -168,7 +168,7 @@ public class GroovyASTUtils {
         } else if (node instanceof final VariableExpression ve) {
             final var accessedVariable = ve.getAccessedVariable();
             if (accessedVariable instanceof final ASTNode an) {
-                // System.out.printf("getDefinition: ve=%s accessedVariable=%s\n", ve,
+                // System.err.printf("getDefinition: ve=%s accessedVariable=%s\n", ve,
                 // accessedVariable);
                 return an;
             }

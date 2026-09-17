@@ -50,7 +50,7 @@ import net.prominic.groovyls.providers.SemanticTokensProvider;
 public class GroovyLanguageServer implements LanguageServer, LanguageClientAware {
     @Override
     public void setTrace(final SetTraceParams params) {
-        System.out.println("setTrace: " + params);
+        System.err.println("setTrace: " + params);
     }
 
     public static void main(final String[] args) {

@@ -178,7 +178,6 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	@Override
 	public void didClose(final DidCloseTextDocumentParams params) {
 		fileContentsTracker.didClose(params);
-		compileAndVisitAST(URI.create(params.getTextDocument().getUri()));
 	}
 
 	@Override
@@ -542,7 +541,9 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 			final var targetDirectory = compilationUnit.getConfiguration().getTargetDirectory();
 			if (targetDirectory != null && targetDirectory.exists()) {
 				try {
-					Files.walk(targetDirectory.toPath()).sorted(Comparator.reverseOrder()).map(Path::toFile)
+					Files.walk(targetDirectory.toPath())
+							.sorted(Comparator.reverseOrder())
+							.map(Path::toFile)
 							.forEach(File::delete);
 				} catch (final IOException e) {
 					System.err.println("Failed to delete target directory: " + targetDirectory.getAbsolutePath());

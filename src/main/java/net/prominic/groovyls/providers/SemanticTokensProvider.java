@@ -169,7 +169,7 @@ public class SemanticTokensProvider {
 		}
 
 		if (expr instanceof final AnnotatedNode an) {
-			System.err.printf("  is_synthetic: %s\b", an.isSynthetic());
+			System.err.printf("  is_synthetic: %s\n", an.isSynthetic());
 		}
 
 		if (expr instanceof final Expression e) {

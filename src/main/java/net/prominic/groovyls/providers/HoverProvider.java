@@ -73,7 +73,7 @@ public class HoverProvider {
 		// SemanticTokensProvider.debugPrint(offsetNode, null);
 
 		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
-		// System.out.printf("provideHover: offsetNode=%s definitionNode=%s\n",
+		// System.err.printf("provideHover: offsetNode=%s definitionNode=%s\n",
 		// offsetNode, definitionNode);
 		final var offsetNodeReferencesDefinitionNode = definitionNode != offsetNode
 				&& offsetNode instanceof final VariableExpression ve
