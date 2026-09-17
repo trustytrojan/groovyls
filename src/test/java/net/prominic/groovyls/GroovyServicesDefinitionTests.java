@@ -484,7 +484,7 @@ class GroovyServicesDefinitionTests {
 	}
 
 	@Test
-	void testCallsOfMemberMethodWithDefaultParameterValues() throws Exception {
+	void testMemberMethodDefinitionFromCall_defaultArgs1() throws Exception {
 		final var uri = srcRoot.resolve("Definitions.groovy").toUri().toString();
 		final var contents = """
 				def func(boolean x, int y = 0, String z = '') {}
@@ -537,11 +537,12 @@ class GroovyServicesDefinitionTests {
 	}
 
 	@Test
-	void testCallsOfMemberMethodWithDefaultParameterValues2() throws Exception {
+	void testMemberMethodDefinitionFromCall_defaultArgs2() throws Exception {
 		final var uri = srcRoot.resolve("Definitions.groovy").toUri().toString();
 		final var contents = """
 				def func(int x = 0, String y) {}
 				func('')
+				func(0, '')
 				""";
 		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents);
 		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
@@ -558,6 +559,72 @@ class GroovyServicesDefinitionTests {
 			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
 			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
 			Assertions.assertEquals(32, location.getRange().getEnd().getCharacter());
+		}
+
+		{
+			final var position = new Position(2, 2);
+			final var locations = services.definition(new DefinitionParams(textDocument, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri, location.getUri());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(32, location.getRange().getEnd().getCharacter());
+		}
+	}
+
+	@Test
+	void testMemberMethodDefinitionFromCall_defaultArgs3() throws Exception {
+		final var uri = srcRoot.resolve("Definitions.groovy").toUri().toString();
+		final var contents = """
+				def func(int x = 0, String y = '') {}
+				func()
+				func(0)
+				func(0, '')
+				""";
+		final var textDocumentItem = new TextDocumentItem(uri, LANGUAGE_GROOVY, 1, contents);
+		services.didOpen(new DidOpenTextDocumentParams(textDocumentItem));
+		final var textDocument = new TextDocumentIdentifier(uri);
+
+		{
+			final var position = new Position(1, 2);
+			final var locations = services.definition(new DefinitionParams(textDocument, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri, location.getUri());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(37, location.getRange().getEnd().getCharacter());
+		}
+
+		{
+			final var position = new Position(2, 2);
+			final var locations = services.definition(new DefinitionParams(textDocument, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri, location.getUri());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(37, location.getRange().getEnd().getCharacter());
+		}
+
+		{
+			final var position = new Position(3, 2);
+			final var locations = services.definition(new DefinitionParams(textDocument, position)).get()
+					.getLeft();
+			Assertions.assertEquals(1, locations.size());
+			final var location = locations.get(0);
+			Assertions.assertEquals(uri, location.getUri());
+			Assertions.assertEquals(0, location.getRange().getStart().getLine());
+			Assertions.assertEquals(0, location.getRange().getStart().getCharacter());
+			Assertions.assertEquals(0, location.getRange().getEnd().getLine());
+			Assertions.assertEquals(37, location.getRange().getEnd().getCharacter());
 		}
 	}
 
