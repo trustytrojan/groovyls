@@ -263,7 +263,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	@Override
 	public CompletableFuture<Hover> hover(final HoverParams params) {
 		final var provider = new HoverProvider(astVisitor);
-		return provider.provideHover(params.getTextDocument(), params.getPosition());
+		return provider.provideHover(params.getTextDocument(), params.getPosition(), fileContentsTracker);
 	}
 
 	@Override

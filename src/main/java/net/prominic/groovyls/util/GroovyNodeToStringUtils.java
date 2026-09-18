@@ -30,22 +30,25 @@ import org.codehaus.groovy.ast.ConstructorNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.Variable;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.tools.WideningCategories.LowestUpperBoundClassNode;
 
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.util.GroovyASTUtils;
+import net.prominic.lsp.utils.Ranges;
 
 public class GroovyNodeToStringUtils {
-	public static String constructorToString(final ConstructorNode cn, final ASTNodeVisitor ast) {
+	public static String constructorToString(final ConstructorNode cn, final ASTNodeVisitor ast, final FileContentsTracker fct) {
 		return "%s(%s)".formatted(
 				cn.getDeclaringClass().getName(),
-				parametersToString(cn.getParameters(), ast));
+				parametersToString(cn.getParameters(), ast, fct));
 	}
 
-	public static String methodToString(final MethodNode mn, final ASTNodeVisitor ast,
+	public static String methodToString(final MethodNode mn, final ASTNodeVisitor ast, final FileContentsTracker fct,
 			final ClassNode inferredReturnType) {
 		if (mn instanceof final ConstructorNode cn) {
-			return constructorToString(cn, ast);
+			return constructorToString(cn, ast, fct);
 		}
 		return "%s %s.%s(%s)".formatted(
 				// In the case of methods that return a generic type, like
@@ -54,17 +57,17 @@ public class GroovyNodeToStringUtils {
 				prettyPrintTypeWithoutPackage((inferredReturnType != null) ? inferredReturnType : mn.getReturnType()),
 				mn.getDeclaringClass().getName(),
 				mn.getName(),
-				parametersToString(mn.getParameters(), ast));
+				parametersToString(mn.getParameters(), ast, fct));
 	}
 
-	public static String parametersToString(final Parameter[] params, final ASTNodeVisitor ast) {
+	public static String parametersToString(final Parameter[] params, final ASTNodeVisitor ast, final FileContentsTracker fct) {
 		final var sb = new StringBuilder();
 		for (int i = 0; i < params.length; i++) {
 			if (i > 0) {
 				sb.append(", ");
 			}
 			final var paramNode = params[i];
-			sb.append(variableToString(paramNode, ast));
+			sb.append(variableToString(paramNode, ast, fct));
 		}
 		return sb.toString();
 	}
@@ -92,14 +95,14 @@ public class GroovyNodeToStringUtils {
 	}
 
 	public static String prettyPrintTypeWithoutPackage(final ClassNode cn) {
-		return prettyPrintType(cn, c -> c.getNameWithoutPackage());
+		return prettyPrintType(cn, ClassNode::getNameWithoutPackage);
 	}
 
 	public static String prettyPrintTypeWithPackage(final ClassNode cn) {
-		return prettyPrintType(cn, c -> c.getName());
+		return prettyPrintType(cn, ClassNode::getName);
 	}
 
-	public static String variableToString(final Variable v, final ASTNodeVisitor ast) {
+	public static String variableToString(final Variable v, final ASTNodeVisitor ast, final FileContentsTracker fct) {
 		ClassNode cn;
 		if (v instanceof final ASTNode an) {
 			cn = GroovyASTUtils.getTypeOfNode(an, ast);
@@ -117,6 +120,26 @@ public class GroovyNodeToStringUtils {
 					? interfaces[0]
 					: upper;
 		}
-		return "%s %s".formatted(prettyPrintTypeWithoutPackage(cn), v.getName());
+		final var initialExprStr = v.hasInitialExpression()
+				? " = %s".formatted(exprToString(v.getInitialExpression(), ast, fct))
+				: "";
+		return "%s %s%s".formatted(prettyPrintTypeWithoutPackage(cn), v.getName(), initialExprStr);
+	}
+
+	private static String exprToString(final Expression expr, final ASTNodeVisitor ast, final FileContentsTracker fct) {
+		// Print string literals exactly as they were written in the source code.
+		if (expr instanceof ConstantExpression && ClassHelper.isStringType(expr.getType())) {
+			final var range = GroovyLanguageServerUtils.astNodeToRange(expr);
+			final var uri = ast.getURI(expr);
+			if (range != null && uri != null) {
+				final var fileContents = fct.getContents(uri);
+				if (fileContents != null) {
+					final var text = Ranges.getSubstring(fileContents, range);
+					if (text != null)
+						return text;
+				}
+			}
+		}
+		return expr.getText();
 	}
 }

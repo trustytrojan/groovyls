@@ -186,7 +186,9 @@ public class SemanticTokensProvider {
 			System.err.printf("  method_target: %s\n", mce.getMethodTarget());
 		}
 
+		var hasInitialExpression = false;
 		if (expr instanceof final Variable v) {
+			hasInitialExpression = v.hasInitialExpression();
 			System.err.printf("  initial_expression: %s\n  is_final: %s\n  is_dynamic_typed: %s\n",
 					v.getInitialExpression(),
 					v.isFinal(),
@@ -197,16 +199,21 @@ public class SemanticTokensProvider {
 			System.err.printf("  return_type: %s\n", mn.getReturnType());
 		}
 
+		final var range = GroovyLanguageServerUtils.astNodeToRange(expr);
+		if (range != null) {
+			// Range#toString() prints newlines, let's print it ourselves
+			final var start = range.getStart();
+			final var end = range.getEnd();
+			System.err.printf("  range: (%s, %s), (%s, %s)\n",
+					start.getLine(), start.getCharacter(),
+					end.getLine(), end.getCharacter());
+		}
+
 		if (ast != null) {
 			final var uri = ast.getURI(expr);
 			if (uri != null) {
 				System.err.printf("  uri: '%s'\n", uri);
-			}
-
-			final var range = GroovyLanguageServerUtils.astNodeToRange(expr);
-			if (range != null) {
-				System.err.printf("  range: %s\n", range);
-				if (fct != null && uri != null) {
+				if (range != null && fct != null) {
 					final var contents = fct.getContents(uri);
 					if (contents != null)
 						System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(contents, range));
@@ -220,6 +227,11 @@ public class SemanticTokensProvider {
 					debugPrint(parent, fct, ast);
 				}
 			}
+		}
+
+		if (hasInitialExpression) {
+			System.err.print("initial expression of Variable: ");
+			debugPrint(((Variable) expr).getInitialExpression(), fct, ast);
 		}
 	}
 

@@ -419,8 +419,13 @@ public class ASTNodeVisitor extends ClassCodeVisitorSupport {
 
 	protected void visitParameter(Parameter node) {
 		pushASTNode(node);
+		// Record the type's position for hovers
+		pushASTNode(node.getOriginType());
 		try {
+			if (node.hasInitialExpression())
+				visit(node.getInitialExpression());
 		} finally {
+			popASTNode();
 			popASTNode();
 		}
 	}
