@@ -68,6 +68,7 @@ public class HoverProvider {
 				? propOrCallExpr.<ClassNode>getNodeMetaData(StaticTypesMarker.INFERRED_TYPE)
 				: null;
 
+		// System.err.print("provideHover: offsetNode: ");
 		// SemanticTokensProvider.debugPrint(offsetNode, fct, ast);
 
 		final var definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
@@ -78,6 +79,9 @@ public class HoverProvider {
 			// Eclipse JDT LS returns nothing when hovering over primitive types.
 			return CompletableFuture.completedFuture(null);
 		}
+
+		// System.err.print("provideHover: definitionNode: ");
+		// SemanticTokensProvider.debugPrint(definitionNode, fct, ast);
 
 		final var offsetNodeReferencesDefinitionNode = definitionNode != offsetNode
 				&& offsetNode instanceof final VariableExpression ve
