@@ -292,6 +292,7 @@ public class SemanticTokensProvider {
 		return Token.encodeList(tokens);
 	}
 
+	// TODO: Might want to reconsider coloring of callable variables as methods.
 	private void processMethodCall(final MethodCallExpression mce, final List<Token> tokens) {
 		// Properly color in a callable object as a method if it is being called
 		// directly in the source code.
@@ -454,13 +455,14 @@ public class SemanticTokensProvider {
 	}
 
 	private int tokenTypeIndexFromNode(final ASTNode node) {
-		if (node instanceof MethodNode
-				|| ClassHelper.CLOSURE_TYPE.equals(GroovyASTUtils.getTypeOfNode(node, astVisitor)))
+		if (node instanceof MethodNode)
 			return SemanticTokenTypes.FUNCTION.ordinal();
 		if (node instanceof ClassNode || node instanceof ImportNode)
 			return SemanticTokenTypes.CLASS.ordinal();
 		if (node instanceof FieldNode || node instanceof PropertyNode)
 			return SemanticTokenTypes.PROPERTY.ordinal();
+		if (node instanceof Parameter)
+			return SemanticTokenTypes.PARAMETER.ordinal();
 		return SemanticTokenTypes.VARIABLE.ordinal();
 	}
 
