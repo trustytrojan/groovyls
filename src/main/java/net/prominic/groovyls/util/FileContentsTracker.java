@@ -38,6 +38,7 @@ import net.prominic.lsp.utils.Positions;
 
 public class FileContentsTracker {
 	private final Map<URI, String> openFiles = new HashMap<>();
+	private final Map<URI, String> lastContents = new HashMap<>();
 	private final Set<URI> changedFiles = new HashSet<>();
 
 	public Set<URI> getOpenURIs() {
@@ -56,13 +57,19 @@ public class FileContentsTracker {
 		changedFiles.add(uri);
 	}
 
+	public void clearChanged(final URI uri) {
+		changedFiles.remove(uri);
+	}
+
 	public boolean isOpen(final URI uri) {
 		return openFiles.containsKey(uri);
 	}
 
 	public void didOpen(final DidOpenTextDocumentParams params) {
 		final var uri = URI.create(params.getTextDocument().getUri());
-		openFiles.put(uri, params.getTextDocument().getText());
+		final var contents = params.getTextDocument().getText();
+		openFiles.put(uri, contents);
+		lastContents.put(uri, contents);
 		changedFiles.add(uri);
 	}
 
@@ -79,27 +86,32 @@ public class FileContentsTracker {
 			final var content = oldText.substring(0, offsetStart) + change.getText() + oldText.substring(offsetEnd);
 			openFiles.put(uri, content);
 		}
+		lastContents.put(uri, openFiles.get(uri));
 		changedFiles.add(uri);
 	}
 
 	public void didClose(final DidCloseTextDocumentParams params) {
 		final var uri = URI.create(params.getTextDocument().getUri());
+		lastContents.put(uri, openFiles.get(uri));
 		openFiles.remove(uri);
-		changedFiles.add(uri);
+	}
+
+	public String getLastContents(final URI uri) {
+		return lastContents.get(uri);
 	}
 
 	public String getContents(final URI uri) {
-		if (!openFiles.containsKey(uri)) {
-			try {
-				return Files.readString(Paths.get(uri));
-			} catch (final IOException e) {
-				return null;
-			}
+		if (openFiles.containsKey(uri))
+			return openFiles.get(uri);
+		try {
+			return Files.readString(Paths.get(uri));
+		} catch (final IOException e) {
+			return null;
 		}
-		return openFiles.get(uri);
 	}
 
 	public void setContents(final URI uri, final String contents) {
 		openFiles.put(uri, contents);
+		lastContents.put(uri, contents);
 	}
 }

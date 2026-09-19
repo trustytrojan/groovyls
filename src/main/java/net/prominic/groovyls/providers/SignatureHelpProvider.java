@@ -96,11 +96,11 @@ public class SignatureHelpProvider {
 			for (int i = 0; i < methodParams.length; i++) {
 				Parameter methodParam = methodParams[i];
 				ParameterInformation paramInfo = new ParameterInformation();
-				paramInfo.setLabel(GroovyNodeToStringUtils.variableToString(methodParam, ast));
+				paramInfo.setLabel(GroovyNodeToStringUtils.variableToString(methodParam, ast, null));
 				parameters.add(paramInfo);
 			}
 			SignatureInformation sigInfo = new SignatureInformation();
-			sigInfo.setLabel(GroovyNodeToStringUtils.methodToString(method, ast, null));
+			sigInfo.setLabel(GroovyNodeToStringUtils.methodToString(method, ast, null, null));
 			sigInfo.setParameters(parameters);
 			Groovydoc methodGroovydoc = method.getGroovydoc();
 			String markdownDocs = GroovydocUtils.groovydocToMarkdownDescription(methodGroovydoc);

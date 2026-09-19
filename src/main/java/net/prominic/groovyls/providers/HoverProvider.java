@@ -22,10 +22,12 @@
 package net.prominic.groovyls.providers;
 
 import java.net.URI;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.AnnotatedNode;
+import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Variable;
@@ -41,22 +43,16 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
 import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.compiler.util.GroovydocUtils;
+import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyNodeToStringUtils;
 
-public class HoverProvider {
-	private final ASTNodeVisitor ast;
-
-	public HoverProvider(final ASTNodeVisitor ast) {
-		this.ast = ast;
+public class HoverProvider extends BaseProvider {
+	public HoverProvider(final ASTNodeVisitor ast, final FileContentsTracker fct) {
+		super(ast, fct);
 	}
 
-	public CompletableFuture<Hover> provideHover(final TextDocumentIdentifier textDocument, final Position position) {
-		if (ast == null) {
-			// this shouldn't happen, but let's avoid an exception if something
-			// goes terribly wrong.
-			return CompletableFuture.completedFuture(null);
-		}
-
+	public CompletableFuture<Hover> provideHover(final TextDocumentIdentifier textDocument, final Position position,
+			final FileContentsTracker fct) {
 		final var uri = URI.create(textDocument.getUri());
 		final var offsetNode = ast.getNodeAtLineAndColumn(uri, position.getLine(), position.getCharacter());
 		if (offsetNode == null) {
@@ -70,31 +66,27 @@ public class HoverProvider {
 				? propOrCallExpr.<ClassNode>getNodeMetaData(StaticTypesMarker.INFERRED_TYPE)
 				: null;
 
-		// SemanticTokensProvider.debugPrint(offsetNode, null);
+		// System.err.print("provideHover: offsetNode: ");
+		// debugPrint(offsetNode);
 
-		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
-		// System.out.printf("provideHover: offsetNode=%s definitionNode=%s\n",
-		// offsetNode, definitionNode);
-		final var offsetNodeReferencesDefinitionNode = definitionNode != offsetNode
-				&& offsetNode instanceof final VariableExpression ve
-				&& ve.getAccessedVariable() == definitionNode;
-		if (definitionNode == null && offsetNode instanceof VariableExpression) {
-			// gdsl: Lookup the variable's text as a field of the enclosing script class.
-			final var enclosingClass = (ClassNode) GroovyASTUtils.getEnclosingNodeOfType(offsetNode, ClassNode.class,
-					ast);
-			if (enclosingClass != null && enclosingClass.isScript()) {
-				definitionNode = enclosingClass.getField(offsetNode.getText());
-			}
-		}
+		final var definitionNode = getDefinition(offsetNode, false);
 		if (definitionNode == null) {
 			return CompletableFuture.completedFuture(null);
 		}
 
-		// Only offsetNode has the current inferred type for the variable at its
-		// specific point in the code.
+		// System.err.print("provideHover: definitionNode: ");
+		// debugPrint(definitionNode);
+
+		final var offsetNodeReferencesDefinitionNode = definitionNode != offsetNode
+				&& offsetNode instanceof final VariableExpression ve
+				&& ve.getAccessedVariable() == definitionNode;
+
+		// In a multi-assignment scenario, only offsetNode has the correct inferred type
+		// at its point in the code.
 		final var content = getContent(
 				offsetNodeReferencesDefinitionNode ? offsetNode : definitionNode,
-				inferredType);
+				inferredType,
+				fct);
 		if (content == null) {
 			System.err.println("*** hover not available for node: " + definitionNode);
 			return CompletableFuture.completedFuture(null);
@@ -122,11 +114,11 @@ public class HoverProvider {
 		return CompletableFuture.completedFuture(hover);
 	}
 
-	private String getContent(final ASTNode hoverNode, final ClassNode inferredType) {
+	private String getContent(final ASTNode hoverNode, final ClassNode inferredType, final FileContentsTracker fct) {
 		return switch (hoverNode) {
 			case final ClassNode cn -> GroovyNodeToStringUtils.prettyPrintTypeWithPackage(cn);
-			case final MethodNode mn -> GroovyNodeToStringUtils.methodToString(mn, ast, inferredType);
-			case final Variable v -> GroovyNodeToStringUtils.variableToString(v, ast);
+			case final MethodNode mn -> GroovyNodeToStringUtils.methodToString(mn, ast, fct, inferredType);
+			case final Variable v -> GroovyNodeToStringUtils.variableToString(v, ast, fct);
 			default -> null;
 		};
 	}

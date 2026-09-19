@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import org.codehaus.groovy.ast.ASTNode;
-import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
@@ -39,11 +38,9 @@ import org.codehaus.groovy.ast.expr.ClassExpression;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.DeclarationExpression;
-import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.GStringExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
-import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.transform.stc.StaticTypesMarker;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -57,9 +54,7 @@ import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 import net.prominic.lsp.utils.Ranges;
 
-public class SemanticTokensProvider {
-	private final FileContentsTracker fileContentsTracker;
-
+public class SemanticTokensProvider extends BaseProvider {
 	public static enum SemanticTokenTypes {
 		TYPE("type"),
 		CLASS("class"),
@@ -126,11 +121,8 @@ public class SemanticTokensProvider {
 		}
 	}
 
-	private final ASTNodeVisitor astVisitor;
-
-	public SemanticTokensProvider(final FileContentsTracker fileContentsTracker, final ASTNodeVisitor astVisitor) {
-		this.fileContentsTracker = fileContentsTracker;
-		this.astVisitor = astVisitor;
+	public SemanticTokensProvider(final ASTNodeVisitor ast, final FileContentsTracker fct) {
+		super(ast, fct);
 	}
 
 	private Token makeTokenFromRange(final Range r, final int type, final int modifiers) {
@@ -141,103 +133,20 @@ public class SemanticTokensProvider {
 		return new Token(startLine, startChar, endChar - startChar, type, modifiers);
 	}
 
-	public static void debugPrint(final ASTNode expr, final FileContentsTracker fct, final ASTNodeVisitor ast) {
-		System.err.printf("debugPrint: %s\n  text: '%s'\n", expr, expr.getText());
-
-		if (expr.getNodeMetaData("groovyls-original-inferred-type") instanceof final ClassNode cn) {
-			System.err.printf("  original_inferred_type: %s\n", cn);
-		}
-
-		if (expr.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn) {
-			System.err.printf("  inferred_type: %s\n", cn);
-		}
-
-		if (expr.getNodeMetaData(StaticTypesMarker.INFERRED_RETURN_TYPE) instanceof final ClassNode cn) {
-			System.err.printf("  inferred_return_type: %s\n", cn);
-		}
-
-		if (expr.getNodeMetaData(StaticTypesMarker.DECLARATION_INFERRED_TYPE) instanceof final ClassNode cn) {
-			System.err.printf("  declaration_inferred_type: %s\n", cn);
-		}
-
-		if (expr.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn) {
-			System.err.printf("  direct_method_call_target: %s\n", mn);
-		}
-
-		if (expr.getNodeMetaData(StaticTypesMarker.READONLY_PROPERTY) instanceof final Boolean b) {
-			System.err.printf("  readonly_property: %s\n", b);
-		}
-
-		if (expr instanceof final AnnotatedNode an) {
-			System.err.printf("  is_synthetic: %s\b", an.isSynthetic());
-		}
-
-		if (expr instanceof final Expression e) {
-			System.err.printf("  type: %s\n", e.getType());
-		} else if (expr instanceof final Variable v) {
-			System.err.printf("  type: %s\n", v.getType());
-		}
-
-		if (expr instanceof final VariableExpression ve) {
-			System.err.printf("  accessed_variable: %s\n", ve.getAccessedVariable());
-		}
-
-		if (expr instanceof final MethodCallExpression mce) {
-			System.err.printf("  method_target: %s\n", mce.getMethodTarget());
-		}
-
-		if (expr instanceof final Variable v) {
-			System.err.printf("  initial_expression: %s\n  is_final: %s\n  is_dynamic_typed: %s\n",
-					v.getInitialExpression(),
-					v.isFinal(),
-					v.isDynamicTyped());
-		}
-
-		if (expr instanceof final MethodNode mn) {
-			System.err.printf("  return_type: %s\n", mn.getReturnType());
-		}
-
-		if (ast != null) {
-			final var uri = ast.getURI(expr);
-			if (uri != null) {
-				System.err.printf("  uri: '%s'\n", uri);
-			}
-
-			final var range = GroovyLanguageServerUtils.astNodeToRange(expr);
-			if (range != null) {
-				System.err.printf("  range: %s\n", range);
-				if (fct != null && uri != null) {
-					final var contents = fct.getContents(uri);
-					if (contents != null)
-						System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(contents, range));
-				}
-			}
-
-			if (expr instanceof ConstantExpression) {
-				final var parent = ast.getParent(expr);
-				if (parent instanceof MethodCallExpression || parent instanceof PropertyExpression) {
-					System.err.print("parent of ConstantExpression: ");
-					debugPrint(parent, fct, ast);
-				}
-			}
-		}
-	}
-
 	private String currentDocumentText;
 
-	@SuppressWarnings("null")
 	public SemanticTokens provideFull(final TextDocumentIdentifier textDocument) {
 		final var uri = URI.create(textDocument.getUri());
-		currentDocumentText = fileContentsTracker.getContents(uri);
+		currentDocumentText = fct.getContents(uri);
 
-		if (currentDocumentText == null || astVisitor == null || uri == null)
+		if (currentDocumentText == null || ast == null || uri == null)
 			return new SemanticTokens(new ArrayList<>());
 
 		final var tokens = new ArrayList<Token>();
 
 		// System.err.println("--- Start of text document: " + uri);
-		for (final var node : astVisitor.getNodes(uri)) {
-			// debugPrint(node, currentDocumentText);
+		for (final var node : ast.getNodes(uri)) {
+			// debugPrint(node);
 
 			if (node instanceof ConstantExpression || node instanceof ClassNode)
 				continue;
@@ -249,7 +158,7 @@ public class SemanticTokensProvider {
 				final var r = GroovyLanguageServerUtils.astNodeToRange(type);
 				if (r == null)
 					continue;
-				tokens.add(makeTokenFromRange(r, SemanticTokenTypes.METHOD.ordinal(), 0));
+				tokens.add(makeTokenFromRange(r, SemanticTokenTypes.CLASS.ordinal(), 0));
 			} else if (node instanceof final DeclarationExpression de) {
 				final var ve = de.getVariableExpression();
 				if (ve == null)
@@ -280,18 +189,16 @@ public class SemanticTokensProvider {
 		return Token.encodeList(tokens);
 	}
 
+	// TODO: Might want to reconsider coloring of callable variables as methods.
 	private void processMethodCall(final MethodCallExpression mce, final List<Token> tokens) {
 		// Properly color in a callable object as a method if it is being called
 		// directly in the source code.
-		final var typeOfNode = GroovyASTUtils.getTypeOfNode(mce.getObjectExpression(), astVisitor);
-		final var hasCallMethod = (typeOfNode != null) && typeOfNode.hasPossibleMethod("call", mce.getArguments());
-		final var callRange = GroovyLanguageServerUtils.astNodeToRange(mce);
-		final var notExplicitCallMethodCall = (callRange != null)
-				&& !Ranges.getSubstring(currentDocumentText, callRange).matches(".*\\.\\s*call\\s*\\(.*");
+		if (GroovyASTUtils.isCallableObjectCall(mce, ast, fct)) {
+			processDeclaration(mce.getObjectExpression(), tokens);
+			return;
+		}
 
-		final var callableObject = hasCallMethod && notExplicitCallMethodCall;
-
-		final var methodText = callableObject ? mce.getObjectExpression().getText() : mce.getMethodAsString();
+		final var methodText = mce.getMethodAsString();
 
 		// We don't want to color in expressions that evaluate to a callable.
 		if (methodText == null || methodText.isEmpty() || (methodText.startsWith("(") && methodText.endsWith(")")))
@@ -301,7 +208,7 @@ public class SemanticTokensProvider {
 		if (actualMethod == null)
 			actualMethod = mce.getMethodTarget();
 		if (actualMethod == null)
-			actualMethod = GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
+			actualMethod = GroovyASTUtils.getMethodFromCallExpression(mce, ast);
 		if (actualMethod == null)
 			return;
 
@@ -351,7 +258,7 @@ public class SemanticTokensProvider {
 		final var lineno = propRange.getStart().getLine();
 		var charno = propRange.getStart().getCharacter();
 
-		if (astVisitor.getParent(pe) instanceof final GStringExpression gse) {
+		if (ast.getParent(pe) instanceof final GStringExpression gse) {
 			final var r = GroovyLanguageServerUtils.astNodeToRange(gse);
 			if (r != null) {
 				final var sourceText = Ranges.getSubstring(currentDocumentText, r);
@@ -403,8 +310,8 @@ public class SemanticTokensProvider {
 
 		// Use these utility functions because they also take into account member
 		// visibility.
-		final var fieldNode = GroovyASTUtils.getFieldFromExpression(pe, astVisitor);
-		final var propertyNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
+		final var fieldNode = GroovyASTUtils.getFieldFromExpression(pe, ast);
+		final var propertyNode = GroovyASTUtils.getPropertyFromExpression(pe, ast);
 
 		var modifiers = 0;
 		if (fieldNode != null)
@@ -442,13 +349,14 @@ public class SemanticTokensProvider {
 	}
 
 	private int tokenTypeIndexFromNode(final ASTNode node) {
-		if (node instanceof MethodNode
-				|| ClassHelper.CLOSURE_TYPE.equals(GroovyASTUtils.getTypeOfNode(node, astVisitor)))
-			return SemanticTokenTypes.FUNCTION.ordinal();
+		if (node instanceof MethodNode)
+			return SemanticTokenTypes.METHOD.ordinal();
 		if (node instanceof ClassNode || node instanceof ImportNode)
 			return SemanticTokenTypes.CLASS.ordinal();
 		if (node instanceof FieldNode || node instanceof PropertyNode)
 			return SemanticTokenTypes.PROPERTY.ordinal();
+		if (node instanceof Parameter)
+			return SemanticTokenTypes.PARAMETER.ordinal();
 		return SemanticTokenTypes.VARIABLE.ordinal();
 	}
 
@@ -466,7 +374,7 @@ public class SemanticTokensProvider {
 			return;
 
 		tokens.add(new Token(identifierRange.getStart().getLine(), identifierRange.getStart().getCharacter(),
-				className.length(), SemanticTokenTypes.METHOD.ordinal(), getModifiersOfNode(mn)));
+				className.length(), SemanticTokenTypes.CLASS.ordinal(), getModifiersOfNode(mn)));
 	}
 
 	public static String getDeclarationName(final ASTNode node) {

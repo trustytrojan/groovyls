@@ -92,7 +92,7 @@ public class GdslSymbolsManager {
             cachedSymbols = symbols;
             currentGdslFile = gdslFile;
             lastModified = fileLastModified;
-            System.out.println("Loaded " + symbols.size() + " GDSL symbols from: " + gdslFile.getAbsolutePath());
+            System.err.println("Loaded " + symbols.size() + " GDSL symbols from: " + gdslFile.getAbsolutePath());
         } catch (IOException e) {
             System.err.println("Failed to load GDSL file: " + gdslFile.getAbsolutePath());
             e.printStackTrace();

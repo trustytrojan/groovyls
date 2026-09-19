@@ -73,8 +73,10 @@ public class MySTCVisitor extends StaticTypeCheckingVisitor {
 		if (ve.getAccessedVariable() == ve) {
 			final var existingInferredType = getInferredType(ve);
 			if (existingInferredType != null) {
-				// This VariableExpression is the **original** object created by a
-				// DeclarationExpression, and it ALREADY has an inferred type.
+				// For the sake of consistency when hovering over the variable's declaration,
+				// store the first/original inferred type in a custom key, so that
+				// GroovyASTUtils#getTypeOfNode() will return it over the *current* type about
+				// to be set below, which is the LUB type.
 				super.storeType(exp, cn);
 				if (ve.getNodeMetaData("groovyls-original-inferred-type") == null)
 					ve.setNodeMetaData("groovyls-original-inferred-type", existingInferredType);
