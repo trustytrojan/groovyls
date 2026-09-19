@@ -262,7 +262,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 
 	@Override
 	public CompletableFuture<Hover> hover(final HoverParams params) {
-		final var provider = new HoverProvider(astVisitor);
+		final var provider = new HoverProvider(astVisitor, fileContentsTracker);
 		return provider.provideHover(params.getTextDocument(), params.getPosition(), fileContentsTracker);
 	}
 
@@ -301,7 +301,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 	@Override
 	public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
 			final DefinitionParams params) {
-		final var provider = new DefinitionProvider(astVisitor);
+		final var provider = new DefinitionProvider(astVisitor, fileContentsTracker);
 		return provider.provideDefinition(params.getTextDocument(), params.getPosition(), fileContentsTracker);
 	}
 
@@ -355,7 +355,7 @@ public class GroovyServices implements TextDocumentService, WorkspaceService, La
 		final var textDocument = params.getTextDocument();
 		// Ensure semantic tokens provider is initialized
 		if (semanticTokensProvider == null) {
-			semanticTokensProvider = new SemanticTokensProvider(fileContentsTracker, astVisitor);
+			semanticTokensProvider = new SemanticTokensProvider(astVisitor, fileContentsTracker);
 		}
 
 		// Provide semantic tokens - GDSL symbols are injected before LSP transmission

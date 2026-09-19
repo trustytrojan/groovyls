@@ -46,11 +46,9 @@ import net.prominic.groovyls.compiler.util.GroovydocUtils;
 import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyNodeToStringUtils;
 
-public class HoverProvider {
-	private final ASTNodeVisitor ast;
-
-	public HoverProvider(final ASTNodeVisitor ast) {
-		this.ast = Objects.requireNonNull(ast);
+public class HoverProvider extends BaseProvider {
+	public HoverProvider(final ASTNodeVisitor ast, final FileContentsTracker fct) {
+		super(ast, fct);
 	}
 
 	public CompletableFuture<Hover> provideHover(final TextDocumentIdentifier textDocument, final Position position,
@@ -69,9 +67,9 @@ public class HoverProvider {
 				: null;
 
 		// System.err.print("provideHover: offsetNode: ");
-		// SemanticTokensProvider.debugPrint(offsetNode, fct, ast);
+		// debugPrint(offsetNode);
 
-		final var definitionNode = GroovyASTUtils.getDefinition(offsetNode, false, ast);
+		final var definitionNode = getDefinition(offsetNode, false);
 		if (definitionNode == null) {
 			return CompletableFuture.completedFuture(null);
 		}
@@ -81,7 +79,7 @@ public class HoverProvider {
 		}
 
 		// System.err.print("provideHover: definitionNode: ");
-		// SemanticTokensProvider.debugPrint(definitionNode, fct, ast);
+		// debugPrint(definitionNode);
 
 		final var offsetNodeReferencesDefinitionNode = definitionNode != offsetNode
 				&& offsetNode instanceof final VariableExpression ve

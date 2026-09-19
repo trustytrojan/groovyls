@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.codehaus.groovy.ast.ASTNode;
+import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.ImportNode;
@@ -53,7 +54,9 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
+import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
+import net.prominic.lsp.utils.Ranges;
 
 public class GroovyASTUtils {
     public static ASTNode getEnclosingNodeOfType(ASTNode offsetNode, Class<? extends ASTNode> nodeType,
@@ -68,24 +71,67 @@ public class GroovyASTUtils {
         return null;
     }
 
-    public static ASTNode getDefinition(ASTNode node, final boolean strict, final ASTNodeVisitor astVisitor) {
+    public static boolean isCallableObjectCall(final MethodCallExpression mce, final ASTNodeVisitor ast,
+            final FileContentsTracker fct) {
+        if (ast == null || fct == null)
+            return false;
+        final var typeOfNode = getTypeOfNode(mce.getObjectExpression(), ast);
+        final var hasCallMethod = (typeOfNode != null) && typeOfNode.hasPossibleMethod("call", mce.getArguments());
+        final var callRange = GroovyLanguageServerUtils.astNodeToRange(mce);
+        final var uri = ast.getURI(mce);
+        if (uri == null)
+            return false;
+        final var text = fct.getContents(uri);
+        if (text == null)
+            return false;
+        final var notExplicitCallMethodCall = (callRange != null)
+                && !Ranges.getSubstring(text, callRange).matches(".*\\.\\s*call\\s*\\(.*");
+        return hasCallMethod && notExplicitCallMethodCall;
+    }
+
+    private static ASTNode getDefinitionOfMethodCall(final MethodCallExpression mce, final boolean strict,
+            final ASTNodeVisitor ast,
+            final FileContentsTracker fct) {
+        final MethodNode definition;
+
+        // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata when it finds a
+        // matching method.
+        // Use pattern matching here because we need to return an ASTNode.
+        // It is expected that the STC fills in DIRECT_METHOD_CALL_TARGET with a
+        // MethodNode, so we pattern match for it.
+        if (mce.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
+            definition = mn;
+        else if (mce.getMethodTarget() != null)
+            definition = mce.getMethodTarget();
+        else
+            definition = GroovyASTUtils.getMethodFromCallExpression(mce, ast);
+
+        return getDefinition(definition, strict, ast);
+    }
+
+    public static ASTNode getDefinition(final ASTNode node, final boolean strict, final ASTNodeVisitor astVisitor) {
+        return getDefinition(node, strict, astVisitor, null);
+    }
+
+    public static ASTNode getDefinition(ASTNode node, final boolean strict, final ASTNodeVisitor ast,
+            final FileContentsTracker fct) {
         if (node == null) {
             return null;
         }
 
-        final var parentNode = astVisitor.getParent(node);
+        final var parentNode = ast.getParent(node);
 
         if (node instanceof final ExpressionStatement es) {
             node = es.getExpression();
         }
 
         if (node instanceof final ClassNode cn) {
-            return tryToResolveOriginalClassNode(cn, strict, astVisitor);
+            return tryToResolveOriginalClassNode(cn, strict, ast);
         } else if (node instanceof final ConstructorCallExpression cce) {
-            final var methodNode = GroovyASTUtils.getMethodFromCallExpression(cce, astVisitor);
+            final var methodNode = GroovyASTUtils.getMethodFromCallExpression(cce, ast);
             if (methodNode == null) {
                 // The class has no explicit constructor, so return the ClassNode itself
-                return tryToResolveOriginalClassNode(cce.getType(), strict, astVisitor);
+                return tryToResolveOriginalClassNode(cce.getType(), strict, ast);
             }
             return methodNode;
         } else if (node instanceof final DeclarationExpression de) {
@@ -103,16 +149,16 @@ public class GroovyASTUtils {
                         return inferredType;
 
                     // Otherwise fallback to the type of the initializing expression.
-                    return tryToResolveOriginalClassNode(de.getRightExpression().getType(), strict, astVisitor);
+                    return tryToResolveOriginalClassNode(de.getRightExpression().getType(), strict, ast);
                 } else {
                     final var originType = variableExpression.getOriginType();
-                    return tryToResolveOriginalClassNode(originType, strict, astVisitor);
+                    return tryToResolveOriginalClassNode(originType, strict, ast);
                 }
             }
         } else if (node instanceof final ClassExpression ce) {
-            return tryToResolveOriginalClassNode(ce.getType(), strict, astVisitor);
+            return tryToResolveOriginalClassNode(ce.getType(), strict, ast);
         } else if (node instanceof final ImportNode in) {
-            return tryToResolveOriginalClassNode(in.getType(), strict, astVisitor);
+            return tryToResolveOriginalClassNode(in.getType(), strict, ast);
         } else if (node instanceof final MethodNode mn) {
             if (mn.isSynthetic()) {
                 final var params1 = mn.getParameters();
@@ -165,23 +211,17 @@ public class GroovyASTUtils {
                 }
             }
             return mn;
-        } else if (node instanceof ConstantExpression && parentNode != null) {
+        } else if (node instanceof ArgumentListExpression && parentNode instanceof final MethodCallExpression mce) {
+            // In cpptools and clangd, hovering over the parens of a call of a callable
+            // object will show the actual method being called. There's no need to restrict
+            // this behavior to callable objects, though.
+            return getDefinitionOfMethodCall(mce, strict, ast, fct);
+        } else if (node instanceof ConstantExpression) {
             if (parentNode instanceof final MethodCallExpression mce) {
-                final MethodNode definition;
+                if (isCallableObjectCall(mce, ast, fct))
+                    return getDefinition(mce.getObjectExpression(), strict, ast);
 
-                // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata when it finds a
-                // matching method.
-                // Use pattern matching here because we need to return an ASTNode.
-                // It is expected that the STC fills in DIRECT_METHOD_CALL_TARGET with a
-                // MethodNode, so we pattern match for it.
-                if (mce.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
-                    definition = mn;
-                else if (mce.getMethodTarget() != null)
-                    definition = mce.getMethodTarget();
-                else
-                    definition = GroovyASTUtils.getMethodFromCallExpression(mce, astVisitor);
-
-                return getDefinition(definition, strict, astVisitor);
+                return getDefinitionOfMethodCall(mce, strict, ast, fct);
             } else if (parentNode instanceof final PropertyExpression pe) {
                 // Groovy's STC fills in the DIRECT_METHOD_CALL_TARGET metadata for
                 // PropertyExpressions where a matching getter is available.
@@ -192,11 +232,11 @@ public class GroovyASTUtils {
                 if (pe.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn)
                     return mn;
 
-                final var propNode = GroovyASTUtils.getPropertyFromExpression(pe, astVisitor);
+                final var propNode = GroovyASTUtils.getPropertyFromExpression(pe, ast);
                 if (propNode != null)
                     return propNode;
 
-                return GroovyASTUtils.getFieldFromExpression(pe, astVisitor);
+                return GroovyASTUtils.getFieldFromExpression(pe, ast);
             }
         } else if (node instanceof final VariableExpression ve) {
             final var accessedVariable = ve.getAccessedVariable();
@@ -624,5 +664,106 @@ public class GroovyASTUtils {
         }
         Position position = new Position(nodeRange.getEnd().getLine() + 1, 0);
         return new Range(position, position);
+    }
+
+    public static void debugPrint(final ASTNode expr, final FileContentsTracker fct, final ASTNodeVisitor ast) {
+        System.err.printf("debugPrint: %s\n  text: '%s'\n", expr, expr.getText());
+
+        if (expr.getNodeMetaData("groovyls-original-inferred-type") instanceof final ClassNode cn) {
+            System.err.printf("  original_inferred_type: %s\n", cn);
+        }
+
+        if (expr.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE) instanceof final ClassNode cn) {
+            System.err.printf("  inferred_type: %s\n", cn);
+        }
+
+        if (expr.getNodeMetaData(StaticTypesMarker.INFERRED_RETURN_TYPE) instanceof final ClassNode cn) {
+            System.err.printf("  inferred_return_type: %s\n", cn);
+        }
+
+        if (expr.getNodeMetaData(StaticTypesMarker.DECLARATION_INFERRED_TYPE) instanceof final ClassNode cn) {
+            System.err.printf("  declaration_inferred_type: %s\n", cn);
+        }
+
+        if (expr.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET) instanceof final MethodNode mn) {
+            System.err.printf("  direct_method_call_target: %s\n", mn);
+        }
+
+        if (expr.getNodeMetaData(StaticTypesMarker.READONLY_PROPERTY) instanceof final Boolean b) {
+            System.err.printf("  readonly_property: %s\n", b);
+        }
+
+        if (expr instanceof final AnnotatedNode an) {
+            System.err.printf("  is_synthetic: %s\n", an.isSynthetic());
+        }
+
+        if (expr instanceof final Expression e) {
+            System.err.printf("  type: %s\n", e.getType());
+        }
+
+        if (expr instanceof final MethodCallExpression mce) {
+            System.err.printf("  method_target: %s\n", mce.getMethodTarget());
+        }
+
+        if (expr instanceof final MethodNode mn) {
+            System.err.printf("  return_type: %s\n", mn.getReturnType());
+        }
+
+        final var range = GroovyLanguageServerUtils.astNodeToRange(expr);
+        if (range != null) {
+            // Range#toString() prints newlines, let's print it ourselves
+            final var start = range.getStart();
+            final var end = range.getEnd();
+            System.err.printf("  range: (%s, %s), (%s, %s)\n",
+                    start.getLine(), start.getCharacter(),
+                    end.getLine(), end.getCharacter());
+        }
+
+        if (ast != null) {
+            final var uri = ast.getURI(expr);
+            if (uri != null) {
+                System.err.printf("  uri: '%s'\n", uri);
+                if (range != null && fct != null) {
+                    final var contents = fct.getContents(uri);
+                    if (contents != null)
+                        System.err.printf("  range_to_text: '%s'\n", Ranges.getSubstring(contents, range));
+                }
+            }
+
+            if (expr instanceof ConstantExpression) {
+                final var parent = ast.getParent(expr);
+                if (parent instanceof MethodCallExpression || parent instanceof PropertyExpression) {
+                    System.err.print("parent of ConstantExpression: ");
+                    debugPrint(parent, fct, ast);
+                }
+            }
+        }
+
+        if (expr instanceof final Variable v && v.hasInitialExpression()) {
+            System.err.print("this Variable: ");
+            debugPrintVariable(v, fct, ast);
+            if (v.hasInitialExpression()) {
+                System.err.print("initial expression of Variable: ");
+                debugPrint(v.getInitialExpression(), fct, ast);
+            }
+        }
+
+        if (expr instanceof final VariableExpression ve && ve.getAccessedVariable() != null) {
+            System.err.print("accessed variable: ");
+            debugPrintVariable(ve.getAccessedVariable(), fct, ast);
+        }
+    }
+
+    public static void debugPrintVariable(final Variable v, final FileContentsTracker fct, final ASTNodeVisitor ast) {
+        System.err.printf("debugPrintVariable: %s\n  type: %s\n  name: '%s'\n", v, v.getType(), v.getName());
+
+        System.err.printf("  final: %s\n  dynamic_typed: %s\n",
+                v.isFinal(),
+                v.isDynamicTyped());
+    
+        if (v.hasInitialExpression()) {
+            System.err.printf("initial expression of Variable: ", v);
+            debugPrint(v.getInitialExpression(), fct, ast);
+        }
     }
 }

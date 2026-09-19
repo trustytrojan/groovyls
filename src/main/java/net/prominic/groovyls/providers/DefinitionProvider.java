@@ -35,15 +35,12 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import net.prominic.groovyls.compiler.ast.ASTNodeVisitor;
-import net.prominic.groovyls.compiler.util.GroovyASTUtils;
 import net.prominic.groovyls.util.FileContentsTracker;
 import net.prominic.groovyls.util.GroovyLanguageServerUtils;
 
-public class DefinitionProvider {
-	private final ASTNodeVisitor ast;
-
-	public DefinitionProvider(final ASTNodeVisitor ast) {
-		this.ast = ast;
+public class DefinitionProvider extends BaseProvider {
+	public DefinitionProvider(final ASTNodeVisitor ast, final FileContentsTracker fct) {
+		super(ast, fct);
 	}
 
 	private static CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> makeReturnValue(
@@ -69,15 +66,15 @@ public class DefinitionProvider {
 		}
 
 		// System.err.print("provideDefinition: offsetNode: ");
-		// SemanticTokensProvider.debugPrint(offsetNode, fct, ast);
+		// debugPrint(offsetNode);
 
-		var definitionNode = GroovyASTUtils.getDefinition(offsetNode, true, ast);
+		var definitionNode = getDefinition(offsetNode, true);
 		if (definitionNode == null) {
 			return SENTINEL;
 		}
 
 		// System.err.print("provideDefinition: definitionNode: ");
-		// SemanticTokensProvider.debugPrint(definitionNode, fct, ast);
+		// debugPrint(definitionNode);
 
 		var definitionURI = ast.getURI(definitionNode);
 		if (definitionURI == null) {
