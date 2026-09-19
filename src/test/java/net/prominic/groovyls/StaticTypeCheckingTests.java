@@ -102,6 +102,8 @@ public class StaticTypeCheckingTests {
 			throw new IllegalStateException("textDocument is null");
 		final var position = new Position(line, col);
 		final var result = services.hover(new HoverParams(textDocument, position)).get();
+		if (result == null)
+			return null;
 		final var hoverContents = result.getContents();
 		return hoverContents.getRight().getValue().replace("```groovy\n", "").replace("\n```", "");
 	}
@@ -239,7 +241,8 @@ public class StaticTypeCheckingTests {
 		Assertions.assertEquals(getHoverContentAtPosition(1, 1), "Object A.call()");
 		Assertions.assertEquals(getHoverContentAtPosition(3, 0), "A");
 		Assertions.assertEquals(getHoverContentAtPosition(3, 4), "A obj");
-		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "Object A.call()");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 0), "A obj");
+		Assertions.assertEquals(getHoverContentAtPosition(4, 4), "Object A.call()");
 	}
 
 	@Test

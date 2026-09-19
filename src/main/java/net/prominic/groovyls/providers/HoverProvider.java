@@ -73,10 +73,6 @@ public class HoverProvider extends BaseProvider {
 		if (definitionNode == null) {
 			return CompletableFuture.completedFuture(null);
 		}
-		if (definitionNode instanceof final ClassNode cn && ClassHelper.isPrimitiveType(cn)) {
-			// Eclipse JDT LS returns nothing when hovering over primitive types.
-			return CompletableFuture.completedFuture(null);
-		}
 
 		// System.err.print("provideHover: definitionNode: ");
 		// debugPrint(definitionNode);

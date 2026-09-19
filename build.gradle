@@ -15,14 +15,14 @@ test {
     exceptionFormat = 'full'
   }
 
-  def outputCache = new StringBuilder()
+  final def outputCache = new StringBuilder()
 
   onOutput { descriptor, event ->
     outputCache.append(event.message)
   }
 
   afterTest { descriptor, result ->
-    if (result.resultType == TestResult.ResultType.FAILURE) {
+    if (result.resultType == TestResult.ResultType.FAILURE && !outputCache.isEmpty()) {
       logger.lifecycle("Output for failed test '${descriptor.name}':\n$outputCache")
     }
     outputCache.setLength(0)
